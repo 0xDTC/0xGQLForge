@@ -39,13 +39,14 @@ func BuildGraphData(s *Schema) GraphData {
 			node.FieldCount = len(t.EnumValues)
 		}
 
-		if t.Name == s.QueryType {
+		switch t.Name {
+		case s.QueryType:
 			node.IsRoot = true
 			node.RootKind = "query"
-		} else if t.Name == s.MutationType {
+		case s.MutationType:
 			node.IsRoot = true
 			node.RootKind = "mutation"
-		} else if t.Name == s.SubscriptionType {
+		case s.SubscriptionType:
 			node.IsRoot = true
 			node.RootKind = "subscription"
 		}
