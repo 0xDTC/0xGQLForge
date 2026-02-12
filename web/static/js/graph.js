@@ -1,7 +1,8 @@
 // 0xGQLForge — D3.js Schema Visualization
 
-(function() {
+document.addEventListener('DOMContentLoaded', function() {
     if (typeof graphData === 'undefined' || !graphData.nodes) return;
+    if (typeof d3 === 'undefined') return;
 
     const container = document.querySelector('.graph-container');
     const svg = d3.select('#schema-graph');
@@ -14,32 +15,61 @@
 
     // Color mapping by type kind
     const kindColors = {
-        'OBJECT': '#3fb950',
-        'INPUT_OBJECT': '#bc8cff',
-        'ENUM': '#f0883e',
-        'INTERFACE': '#79c0ff',
-        'UNION': '#db61a2',
-        'SCALAR': '#8b949e'
+        'OBJECT': '#22c55e',
+        'INPUT_OBJECT': '#a78bfa',
+        'ENUM': '#f97316',
+        'INTERFACE': '#06b6d4',
+        'UNION': '#ec4899',
+        'SCALAR': '#64748b'
     };
 
     const rootColors = {
-        'query': '#58a6ff',
-        'mutation': '#f85149',
-        'subscription': '#d29922'
+        'query': '#3b82f6',
+        'mutation': '#ef4444',
+        'subscription': '#eab308'
     };
 
-    // Filter out scalar nodes by default
+    // Extract schema ID from the page URL (/schema/{id}/graph)
+    const schemaId = window.location.pathname.split('/')[2] || '';
+
+    // Build a lookup: for each non-root node, find which operation (link from root)
+    // points to it, so we can generate a query on click.
+    const rootKindMap = {}; // nodeId -> rootKind ("query"/"mutation"/"subscription")
+    graphData.nodes.forEach(n => {
+        if (n.isRoot) rootKindMap[n.id] = n.rootKind;
+    });
+
+    // Map: targetNodeId -> { opName, kind } for nodes directly reachable from a root type
+    const nodeOps = {};
+    graphData.links.forEach(l => {
+        const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+        if (rootKindMap[srcId]) {
+            const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+            if (!nodeOps[tgtId]) {
+                nodeOps[tgtId] = { opName: l.fieldName, kind: rootKindMap[srcId] };
+            }
+        }
+    });
+
+    // Keep a pristine copy of nodes/links for re-filtering (D3 mutates them)
+    const pristineNodes = JSON.parse(JSON.stringify(graphData.nodes));
+    const pristineLinks = JSON.parse(JSON.stringify(graphData.links));
+
     let showScalars = false;
-    let filteredData = filterData();
+    let simulation = null;
 
     function filterData() {
-        let nodes = graphData.nodes;
+        let nodes = pristineNodes;
         if (!showScalars) {
             nodes = nodes.filter(n => n.kind !== 'SCALAR');
         }
         const nodeIds = new Set(nodes.map(n => n.id));
-        const links = graphData.links.filter(l => nodeIds.has(l.source) && nodeIds.has(l.target));
-        return { nodes: [...nodes], links: [...links] };
+        const links = pristineLinks.filter(l => nodeIds.has(l.source) && nodeIds.has(l.target));
+        // Deep clone to prevent D3 mutation from affecting pristine data
+        return {
+            nodes: JSON.parse(JSON.stringify(nodes)),
+            links: JSON.parse(JSON.stringify(links))
+        };
     }
 
     // Create zoom behavior
@@ -64,11 +94,69 @@
         .attr('orient', 'auto')
         .append('path')
         .attr('d', 'M0,-5L10,0L0,5')
-        .attr('fill', '#30363d');
+        .attr('fill', '#2d3548');
 
-    let simulation, linkElements, nodeElements, labelElements;
+    // Toast notification for clipboard feedback
+    function showToast(msg, isError) {
+        let toast = document.getElementById('graph-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'graph-toast';
+            toast.style.cssText = 'position:fixed;bottom:2rem;right:2rem;padding:0.75rem 1.25rem;border-radius:8px;font-size:0.85rem;z-index:200;transition:opacity 0.3s;pointer-events:none;';
+            document.body.appendChild(toast);
+        }
+        toast.style.background = isError ? '#dc2626' : '#22c55e';
+        toast.style.color = '#fff';
+        toast.style.opacity = '1';
+        toast.textContent = msg;
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+    }
+
+    // Click handler: generate query for operations reachable from this node
+    function onNodeClick(event, d) {
+        // Check if this node is directly returned by a root operation
+        const op = nodeOps[d.id];
+        if (op && schemaId) {
+            generateAndCopy(schemaId, op.opName, op.kind);
+            return;
+        }
+        // If this IS a root type node, show a hint
+        if (d.isRoot) {
+            showToast('Click a connected type to generate its query', false);
+            return;
+        }
+        showToast('No direct operation for ' + d.id, true);
+    }
+
+    function generateAndCopy(sid, opName, kind) {
+        showToast('Generating ' + opName + '...', false);
+        fetch('/api/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ schemaId: sid, operation: opName, kind: kind, maxDepth: 3 })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                showToast('Error: ' + data.error, true);
+                return;
+            }
+            navigator.clipboard.writeText(data.query).then(() => {
+                showToast('Copied ' + opName + ' query to clipboard', false);
+            }).catch(() => {
+                showToast('Generated but clipboard access denied', true);
+            });
+        })
+        .catch(err => {
+            showToast('Error: ' + err.message, true);
+        });
+    }
 
     function render(data) {
+        // Stop previous simulation
+        if (simulation) simulation.stop();
+
         g.selectAll('*').remove();
 
         simulation = d3.forceSimulation(data.nodes)
@@ -78,7 +166,7 @@
             .force('collision', d3.forceCollide().radius(40));
 
         // Links
-        linkElements = g.append('g')
+        const linkElements = g.append('g')
             .selectAll('line')
             .data(data.links)
             .join('line')
@@ -96,7 +184,7 @@
             .text(d => d.fieldName);
 
         // Nodes
-        nodeElements = g.append('g')
+        const nodeElements = g.append('g')
             .selectAll('circle')
             .data(data.nodes)
             .join('circle')
@@ -106,15 +194,15 @@
             })
             .attr('fill', d => {
                 if (d.isRoot) return rootColors[d.rootKind] || kindColors[d.kind];
-                return kindColors[d.kind] || '#8b949e';
+                return kindColors[d.kind] || '#64748b';
             })
-            .attr('stroke', d => d.isRoot ? '#fff' : '#30363d')
+            .attr('stroke', d => d.isRoot ? '#e2e8f0' : '#232a3b')
             .attr('stroke-width', d => d.isRoot ? 2.5 : 1)
             .attr('cursor', 'pointer')
             .call(drag(simulation));
 
         // Node labels
-        labelElements = g.append('g')
+        const labelElements = g.append('g')
             .selectAll('text')
             .data(data.nodes)
             .join('text')
@@ -131,13 +219,15 @@
         nodeElements
             .on('mouseover', (event, d) => {
                 tooltip.style.display = 'block';
-                tooltip.innerHTML = `
-                    <strong>${d.id}</strong><br>
-                    Kind: ${d.kind}<br>
-                    Fields: ${d.fieldCount}
-                    ${d.isRoot ? '<br>Root: ' + d.rootKind : ''}
-                    ${d.description ? '<br>' + d.description : ''}
-                `;
+                const op = nodeOps[d.id];
+                const opHint = op ? '<br><em>Click to generate & copy: ' + op.opName + '</em>' : '';
+                tooltip.innerHTML =
+                    '<strong>' + d.id + '</strong><br>' +
+                    'Kind: ' + d.kind + '<br>' +
+                    'Fields: ' + d.fieldCount +
+                    (d.isRoot ? '<br>Root: ' + d.rootKind : '') +
+                    (d.description ? '<br>' + d.description : '') +
+                    opHint;
             })
             .on('mousemove', (event) => {
                 const rect = container.getBoundingClientRect();
@@ -146,7 +236,8 @@
             })
             .on('mouseout', () => {
                 tooltip.style.display = 'none';
-            });
+            })
+            .on('click', onNodeClick);
 
         // Simulation tick
         simulation.on('tick', () => {
@@ -170,10 +261,10 @@
         });
     }
 
-    function drag(simulation) {
+    function drag(sim) {
         return d3.drag()
             .on('start', (event, d) => {
-                if (!event.active) simulation.alphaTarget(0.3).restart();
+                if (!event.active) sim.alphaTarget(0.3).restart();
                 d.fx = d.x;
                 d.fy = d.y;
             })
@@ -182,13 +273,13 @@
                 d.fy = event.y;
             })
             .on('end', (event, d) => {
-                if (!event.active) simulation.alphaTarget(0);
+                if (!event.active) sim.alphaTarget(0);
                 d.fx = null;
                 d.fy = null;
             });
     }
 
-    render(filteredData);
+    render(filterData());
 
     // Global functions for controls
     window.resetZoom = function() {
@@ -197,7 +288,6 @@
 
     window.toggleScalars = function(checked) {
         showScalars = checked;
-        filteredData = filterData();
-        render(filteredData);
+        render(filterData());
     };
-})();
+});

@@ -1,8 +1,9 @@
 // 0xGQLForge — Query Generator UI
 
 function generateQuery(schemaId, opName, kind) {
-    const maxDepth = parseInt(document.getElementById('max-depth').value) || 3;
-    const resultDiv = document.getElementById('generator-result');
+    const depthEl = document.getElementById('max-depth');
+    const maxDepth = depthEl ? (parseInt(depthEl.value) || 3) : 3;
+    const resultDiv = document.getElementById('generator-result') || document.getElementById('detail-panel');
 
     resultDiv.innerHTML = '<p>Generating query...</p>';
 

@@ -1,0 +1,5 @@
+query getExportedFontsForReviewData($input: ExportFontForReviewInput!) {
+  getExportedFontsForReviewData(input: $input) {
+        exportUrl
+  }
+}
