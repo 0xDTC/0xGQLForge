@@ -5,7 +5,7 @@ import (
 	"html/template"
 	"net/http"
 
-	"github.com/0xdtc/graphscope/internal/storage"
+	"github.com/0xDTC/0xGQLForge/internal/storage"
 )
 
 // Handlers holds all HTTP handler dependencies.

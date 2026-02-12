@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // ClusterQueries groups captured requests by their structural fingerprint.

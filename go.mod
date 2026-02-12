@@ -1,4 +1,4 @@
-module github.com/0xdtc/graphscope
+module github.com/0xDTC/0xGQLForge
 
 go 1.24.9
 

@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0xdtc/graphscope/internal/schema"
-	"github.com/0xdtc/graphscope/internal/storage"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/storage"
 )
 
 // Proxy is the MITM proxy engine that intercepts and analyzes GraphQL traffic.

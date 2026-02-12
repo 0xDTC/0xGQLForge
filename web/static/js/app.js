@@ -1,4 +1,4 @@
-// GraphScope — Core application JavaScript
+// 0xGQLForge — Core application JavaScript
 
 document.addEventListener('DOMContentLoaded', function() {
     loadSchemaNav();

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // TryBypass attempts various introspection bypass techniques against a target GraphQL endpoint.

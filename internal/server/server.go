@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/0xdtc/graphscope/internal/handler"
-	"github.com/0xdtc/graphscope/internal/storage"
+	"github.com/0xDTC/0xGQLForge/internal/handler"
+	"github.com/0xDTC/0xGQLForge/internal/storage"
 )
 
 // Config holds server configuration.
@@ -22,7 +22,7 @@ type Config struct {
 	TemplateFS embed.FS
 }
 
-// Server is the main web server for GraphScope.
+// Server is the main web server for 0xGQLForge.
 type Server struct {
 	cfg      Config
 	db       *storage.DB
@@ -98,7 +98,7 @@ func (s *Server) parseTemplates() error {
 
 // Start begins serving HTTP requests.
 func (s *Server) Start() error {
-	log.Printf("GraphScope web UI: http://%s", s.cfg.Addr)
+	log.Printf("0xGQLForge web UI: http://%s", s.cfg.Addr)
 	return s.httpSrv.ListenAndServe()
 }
 

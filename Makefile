@@ -1,7 +1,7 @@
 .PHONY: build run clean
 
-BINARY=graphscope
-MAIN=./cmd/graphscope
+BINARY=gqlforge
+MAIN=./cmd/gqlforge
 
 build:
 	CGO_ENABLED=1 go build -o $(BINARY) $(MAIN)

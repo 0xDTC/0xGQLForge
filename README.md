@@ -1,8 +1,8 @@
-# GraphScope
+# 0xGQLForge
 
 A GraphQL reconnaissance and security testing tool built in Go. Single binary, zero-config, dark-themed web UI.
 
-GraphScope provides schema introspection parsing, interactive type visualization, an MITM proxy for traffic capture, automatic query generation, similarity analysis, and security auditing — all from a single binary with an embedded web interface.
+0xGQLForge provides schema introspection parsing, interactive type visualization, an MITM proxy for traffic capture, automatic query generation, similarity analysis, and security auditing — all from a single binary with an embedded web interface.
 
 ## Features
 
@@ -24,13 +24,13 @@ GraphScope provides schema introspection parsing, interactive type visualization
 make build
 
 # Run
-./graphscope
+./gqlforge
 
 # With auto-starting proxy
-./graphscope -auto-proxy
+./gqlforge -auto-proxy
 
 # Custom ports
-./graphscope -addr :9090 -proxy :9999
+./gqlforge -addr :9090 -proxy :9999
 ```
 
 Open `http://localhost:8080` in your browser.
@@ -51,14 +51,14 @@ The schema explorer will show all types, operations, and relationships.
 
 ### 2. Proxy Mode
 
-1. Install the CA certificate from `~/.graphscope/ca.pem` into your browser/system trust store
+1. Install the CA certificate from `~/.gqlforge/ca.pem` into your browser/system trust store
 2. Start the proxy from the UI or with `-auto-proxy`
 3. Configure your browser/tool to proxy through `:8888`
 4. Browse any GraphQL API — requests appear in real-time via SSE
 
 ### 3. Query Generation
 
-Click any operation in the schema explorer or generator view. GraphScope will:
+Click any operation in the schema explorer or generator view. 0xGQLForge will:
 
 - Build a complete query with proper variable definitions
 - Fill in context-aware example values (emails, IDs, pagination params)
@@ -87,7 +87,7 @@ Run the full analysis suite against any parsed schema:
 
 ```mermaid
 graph TB
-    subgraph "GraphScope Binary"
+    subgraph "0xGQLForge Binary"
         direction TB
 
         subgraph "Web Layer"
@@ -170,7 +170,7 @@ flowchart LR
     end
 
     subgraph "Level 0"
-        GS{{"GraphScope"}}
+        GS{{"0xGQLForge"}}
     end
 
     USER -->|Introspection JSON| GS
@@ -188,7 +188,7 @@ flowchart TB
     USER([User])
     TARGET([Target API])
 
-    subgraph "GraphScope Processes"
+    subgraph "0xGQLForge Processes"
         P1[1.0<br/>Parse Introspection]
         P2[2.0<br/>Explore Schema]
         P3[3.0<br/>Generate Queries]
@@ -239,7 +239,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant C as Client Browser
-    participant P as GraphScope Proxy
+    participant P as 0xGQLForge Proxy
     participant CA as Cert Manager
     participant T as Target API
     participant DB as SQLite
@@ -319,8 +319,8 @@ flowchart LR
 ## Directory Structure
 
 ```
-graphscope/
-├── cmd/graphscope/         # Entry point, flag parsing, wiring
+0xGQLForge/
+├── cmd/gqlforge/          # Entry point, flag parsing, wiring
 │   └── main.go
 ├── internal/
 │   ├── server/             # HTTP server, stdlib router, middleware
@@ -363,24 +363,24 @@ Everything else is Go standard library or vendored JS.
 |---|---|---|
 | `-addr` | `:8080` | Web UI listen address |
 | `-proxy` | `:8888` | MITM proxy listen address |
-| `-db` | `~/.graphscope/graphscope.db` | SQLite database path |
+| `-db` | `~/.gqlforge/gqlforge.db` | SQLite database path |
 | `-auto-proxy` | `false` | Start proxy automatically on launch |
 
 ## Files Generated
 
-On first run, GraphScope creates `~/.graphscope/` containing:
+On first run, 0xGQLForge creates `~/.gqlforge/` containing:
 
 | File | Purpose |
 |---|---|
 | `ca.pem` | CA certificate — install in browser/system trust store for HTTPS interception |
 | `ca-key.pem` | CA private key (ECDSA P-256) — kept with 0600 permissions |
-| `graphscope.db` | SQLite database for schemas, traffic, and analysis results |
+| `gqlforge.db` | SQLite database for schemas, traffic, and analysis results |
 
 ## Security Considerations
 
 - The MITM proxy uses `InsecureSkipVerify` when forwarding to targets — this is **by design** for a security testing tool. Do not use in production environments.
 - The web UI has **no authentication**. Bind to `localhost` or use in isolated networks only.
-- CA private key is stored at `~/.graphscope/ca-key.pem` with restricted permissions. Protect this file.
+- CA private key is stored at `~/.gqlforge/ca-key.pem` with restricted permissions. Protect this file.
 - The field fuzzer and bypass engine send HTTP requests to external targets. Use only against systems you are authorized to test.
 
 ## License

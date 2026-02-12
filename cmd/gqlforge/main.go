@@ -10,17 +10,17 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/0xdtc/graphscope/internal/handler"
-	"github.com/0xdtc/graphscope/internal/proxy"
-	"github.com/0xdtc/graphscope/internal/server"
-	"github.com/0xdtc/graphscope/internal/storage"
-	"github.com/0xdtc/graphscope/web"
+	"github.com/0xDTC/0xGQLForge/internal/handler"
+	"github.com/0xDTC/0xGQLForge/internal/proxy"
+	"github.com/0xDTC/0xGQLForge/internal/server"
+	"github.com/0xDTC/0xGQLForge/internal/storage"
+	"github.com/0xDTC/0xGQLForge/web"
 )
 
 func main() {
 	addr := flag.String("addr", ":8080", "Web UI listen address")
 	proxyAddr := flag.String("proxy", ":8888", "MITM proxy listen address")
-	dbPath := flag.String("db", "", "SQLite database path (default: ~/.graphscope/graphscope.db)")
+	dbPath := flag.String("db", "", "SQLite database path (default: ~/.gqlforge/gqlforge.db)")
 	autoProxy := flag.Bool("auto-proxy", false, "Start proxy automatically on launch")
 	flag.Parse()
 
@@ -31,7 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("get home dir: %v", err)
 	}
-	configDir := filepath.Join(home, ".graphscope")
+	configDir := filepath.Join(home, ".gqlforge")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		log.Fatalf("create config dir: %v", err)
 	}
@@ -92,17 +92,17 @@ func main() {
 	}()
 
 	fmt.Print(`
-   ____                 _     ____
-  / ___|_ __ __ _ _ __ | |__ / ___|  ___ ___  _ __   ___
- | |  _| '__/ _` + "`" + ` | '_ \| '_ \\___ \ / __/ _ \| '_ \ / _ \
- | |_| | | | (_| | |_) | | | |___) | (_| (_) | |_) |  __/
-  \____|_|  \__,_| .__/|_| |_|____/ \___\___/| .__/ \___|
-                 |_|                          |_|
+   ___        ____  ___  _     _____
+  / _ \__  __/ ___|/ _ \| |   |  ___|__  _ __ __ _  ___
+ | | | \ \/ / |  _| | | | |   | |_ / _ \| '__/ _` + "`" + ` |/ _ \
+ | |_| |>  <| |_| | |_| | |___|  _| (_) | | | (_| |  __/
+  \___//_/\_\\____|\___ \|_____|_|  \___/|_|  \__, |\___|
+                       |_|                    |___/
 `)
 	fmt.Printf("  Web UI:    http://localhost%s\n", *addr)
 	fmt.Printf("  Proxy:     %s\n", *proxyAddr)
 	fmt.Printf("  CA Cert:   %s\n", certMgr.CACertPath())
-	fmt.Printf("  Database:  %s\n", filepath.Join(configDir, "graphscope.db"))
+	fmt.Printf("  Database:  %s\n", filepath.Join(configDir, "gqlforge.db"))
 	fmt.Println()
 
 	if err := srv.Start(); err != nil && err.Error() != "http: Server closed" {
