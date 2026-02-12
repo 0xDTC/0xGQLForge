@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/0xdtc/graphscope/internal/generator"
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/generator"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // GeneratorView renders the query generator page.

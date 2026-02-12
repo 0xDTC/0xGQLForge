@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // Config controls query generation behavior.

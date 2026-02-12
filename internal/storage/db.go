@@ -17,18 +17,18 @@ type DB struct {
 }
 
 // New opens (or creates) a SQLite database at the given path.
-// If path is empty, it defaults to ~/.graphscope/graphscope.db.
+// If path is empty, it defaults to ~/.gqlforge/gqlforge.db.
 func New(path string) (*DB, error) {
 	if path == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("get home dir: %w", err)
 		}
-		dir := filepath.Join(home, ".graphscope")
+		dir := filepath.Join(home, ".gqlforge")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("create config dir: %w", err)
 		}
-		path = filepath.Join(dir, "graphscope.db")
+		path = filepath.Join(dir, "gqlforge.db")
 	}
 
 	conn, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")

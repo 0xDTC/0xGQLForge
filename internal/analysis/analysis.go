@@ -1,8 +1,8 @@
 package analysis
 
 import (
-	"github.com/0xdtc/graphscope/internal/generator"
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/generator"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // RunAll executes all security analysis modules on a schema and returns a map of results.

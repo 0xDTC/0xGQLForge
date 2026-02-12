@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // PartialTypeDetail renders a type detail panel (HTMX partial).

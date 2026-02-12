@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // ReconstructSchema attempts to infer a schema from captured GraphQL traffic.

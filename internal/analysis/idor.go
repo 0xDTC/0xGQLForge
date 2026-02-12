@@ -3,7 +3,7 @@ package analysis
 import (
 	"strings"
 
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // idorArgPatterns are argument names that commonly indicate IDOR vulnerability potential.

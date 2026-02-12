@@ -1,7 +1,7 @@
 package generator
 
 import (
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // exampleValue generates a placeholder value for an argument based on its type.

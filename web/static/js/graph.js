@@ -1,4 +1,4 @@
-// GraphScope — D3.js Schema Visualization
+// 0xGQLForge — D3.js Schema Visualization
 
 (function() {
     if (typeof graphData === 'undefined' || !graphData.nodes) return;

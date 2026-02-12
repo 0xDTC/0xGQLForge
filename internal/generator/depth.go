@@ -1,7 +1,7 @@
 package generator
 
 import (
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // AnalyzeDepth calculates the maximum possible query depth for each operation.

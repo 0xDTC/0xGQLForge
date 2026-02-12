@@ -3,7 +3,7 @@ package analysis
 import (
 	"strings"
 
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // dangerousPatterns maps mutation name patterns to their risk descriptions.

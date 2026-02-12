@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // SchemaView renders the schema explorer page.

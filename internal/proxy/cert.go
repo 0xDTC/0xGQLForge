@@ -85,8 +85,8 @@ func (cm *CertManager) generateCA(certPath, keyPath string) error {
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			Organization: []string{"GraphScope"},
-			CommonName:   "GraphScope CA",
+			Organization: []string{"0xGQLForge"},
+			CommonName:   "0xGQLForge CA",
 		},
 		NotBefore:             time.Now().Add(-1 * time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour), // 10 years

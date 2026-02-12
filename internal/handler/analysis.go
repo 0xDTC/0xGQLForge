@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/0xdtc/graphscope/internal/analysis"
+	"github.com/0xDTC/0xGQLForge/internal/analysis"
 )
 
 // AnalysisView renders the security analysis page.

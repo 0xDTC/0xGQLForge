@@ -1,4 +1,4 @@
-// GraphScope — Query Generator UI
+// 0xGQLForge — Query Generator UI
 
 function generateQuery(schemaId, opName, kind) {
     const maxDepth = parseInt(document.getElementById('max-depth').value) || 3;

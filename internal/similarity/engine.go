@@ -1,8 +1,8 @@
 package similarity
 
 import (
-	"github.com/0xdtc/graphscope/internal/schema"
-	"github.com/0xdtc/graphscope/internal/storage"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/storage"
 )
 
 // Engine orchestrates query similarity analysis and schema reconstruction.

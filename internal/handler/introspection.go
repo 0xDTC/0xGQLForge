@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/0xdtc/graphscope/internal/parser"
-	"github.com/0xdtc/graphscope/internal/schema"
+	"github.com/0xDTC/0xGQLForge/internal/parser"
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // IntrospectionParse handles POST /api/introspection — parses pasted introspection JSON.
