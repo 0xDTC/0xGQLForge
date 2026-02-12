@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"strings"
 
 	"github.com/0xDTC/0xGQLForge/internal/storage"
 )
@@ -13,7 +14,7 @@ type Handlers struct {
 	SchemaRepo   *storage.SchemaRepo
 	TrafficRepo  *storage.TrafficRepo
 	AnalysisRepo *storage.AnalysisRepo
-	tmpl         *template.Template
+	tmpls        map[string]*template.Template
 	proxyCtrl    ProxyController
 }
 
@@ -37,8 +38,8 @@ func NewHandlers(sr *storage.SchemaRepo, tr *storage.TrafficRepo, ar *storage.An
 }
 
 // SetTemplates sets the parsed template collection for page rendering.
-func (h *Handlers) SetTemplates(tmpl *template.Template) {
-	h.tmpl = tmpl
+func (h *Handlers) SetTemplates(tmpls map[string]*template.Template) {
+	h.tmpls = tmpls
 }
 
 // SetProxyController wires the proxy control interface.
@@ -47,9 +48,20 @@ func (h *Handlers) SetProxyController(ctrl ProxyController) {
 }
 
 // render executes a named template with the given data.
+// Page templates are executed via "layout.html"; partials are executed directly.
 func (h *Handlers) render(w http.ResponseWriter, name string, data any) {
+	t, ok := h.tmpls[name]
+	if !ok {
+		http.Error(w, "Template not found: "+name, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
+	// Page templates are rooted at "layout.html"; partials use their own name.
+	execName := "layout.html"
+	if strings.HasPrefix(name, "partials/") {
+		execName = name
+	}
+	if err := t.ExecuteTemplate(w, execName, data); err != nil {
 		http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
 	}
 }
