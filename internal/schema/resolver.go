@@ -10,9 +10,16 @@ func BuildGraphData(s *Schema) GraphData {
 		"String": true, "Int": true, "Float": true, "Boolean": true, "ID": true,
 	}
 
-	typeIndex := make(map[string]*Type)
-	for i := range s.Types {
-		typeIndex[s.Types[i].Name] = &s.Types[i]
+	// Pre-compute which type names appear as graph nodes (for IsLink resolution).
+	validTypeNames := make(map[string]bool)
+	for _, t := range s.Types {
+		if len(t.Name) > 2 && t.Name[:2] == "__" {
+			continue
+		}
+		if t.Kind == KindScalar && builtinScalars[t.Name] {
+			continue
+		}
+		validTypeNames[t.Name] = true
 	}
 
 	// Create nodes for non-internal types
@@ -30,13 +37,31 @@ func BuildGraphData(s *Schema) GraphData {
 			Description: t.Description,
 		}
 
+		// Populate field rows for ERD display
 		switch t.Kind {
 		case KindObject, KindInterface:
 			node.FieldCount = len(t.Fields)
+			for _, f := range t.Fields {
+				node.Fields = append(node.Fields, GraphField{
+					Name:    f.Name,
+					TypeSig: f.Type.Signature(),
+					IsLink:  validTypeNames[f.Type.BaseName()],
+				})
+			}
 		case KindInputObject:
 			node.FieldCount = len(t.InputFields)
+			for _, f := range t.InputFields {
+				node.Fields = append(node.Fields, GraphField{
+					Name:    f.Name,
+					TypeSig: f.Type.Signature(),
+					IsLink:  validTypeNames[f.Type.BaseName()],
+				})
+			}
 		case KindEnum:
 			node.FieldCount = len(t.EnumValues)
+			for _, ev := range t.EnumValues {
+				node.Fields = append(node.Fields, GraphField{Name: ev.Name})
+			}
 		}
 
 		switch t.Name {

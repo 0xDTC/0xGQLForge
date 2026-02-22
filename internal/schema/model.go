@@ -182,14 +182,22 @@ type GraphData struct {
 	Links []GraphLink `json:"links"`
 }
 
+// GraphField is one field row inside a GraphNode for ERD visualization.
+type GraphField struct {
+	Name    string `json:"name"`
+	TypeSig string `json:"typeSig,omitempty"` // e.g. "String!", "[User]", "Int"
+	IsLink  bool   `json:"isLink,omitempty"`  // true if the field type maps to another graph node
+}
+
 // GraphNode represents a type node for visualization.
 type GraphNode struct {
-	ID          string   `json:"id"`
-	Kind        TypeKind `json:"kind"`
-	FieldCount  int      `json:"fieldCount"`
-	Description string   `json:"description,omitempty"`
-	IsRoot      bool     `json:"isRoot,omitempty"`
-	RootKind    string   `json:"rootKind,omitempty"` // "query", "mutation", "subscription"
+	ID          string       `json:"id"`
+	Kind        TypeKind     `json:"kind"`
+	FieldCount  int          `json:"fieldCount"`
+	Description string       `json:"description,omitempty"`
+	IsRoot      bool         `json:"isRoot,omitempty"`
+	RootKind    string       `json:"rootKind,omitempty"` // "query", "mutation", "subscription"
+	Fields      []GraphField `json:"fields,omitempty"`
 }
 
 // GraphLink represents a relationship edge for visualization.

@@ -3,7 +3,7 @@
     <h1>Schema Graph: {{.Schema.Name}}</h1>
     <div class="page-actions">
         <a href="/schema/{{.Schema.ID}}" class="btn">Back to Schema</a>
-        <button class="btn" onclick="resetZoom()">Reset Zoom</button>
+        <button class="btn" onclick="resetZoom()">Reset Layout</button>
         <label class="toggle-label">
             <input type="checkbox" id="toggle-scalars" onchange="toggleScalars(this.checked)">
             Show Scalars
@@ -14,6 +14,19 @@
 <div class="graph-container">
     <svg id="schema-graph" width="100%" height="100%"></svg>
     <div id="graph-tooltip" class="graph-tooltip" style="display:none;"></div>
+    <div class="graph-legend">
+        <div class="legend-title">Type Legend</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#1d4ed8"></span>Query root</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#b91c1c"></span>Mutation root</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#92400e"></span>Subscription root</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#0e7490"></span>Object type</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#7c3aed"></span>Input object</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#c2410c"></span>Enum</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#0369a1"></span>Interface</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#be185d"></span>Union</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#334155"></span>Scalar</div>
+        <div class="legend-hint">Colored dot = linked field<br>Green dot = click to generate query</div>
+    </div>
 </div>
 
 <script>

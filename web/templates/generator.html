@@ -7,54 +7,87 @@
 </div>
 
 <div class="generator-layout">
+
+    <!-- ── Sidebar ─────────────────────────────────────────────────── -->
     <div class="generator-sidebar">
-        <div class="form-group">
-            <label>Max Depth</label>
-            <input type="number" id="max-depth" value="3" min="1" max="10" class="input">
+
+        <div class="gen-sidebar-top">
+            <input type="text" id="op-search" class="input"
+                placeholder="Search operations…"
+                oninput="filterOps(this.value)">
+            <div class="gen-depth-row">
+                <label for="max-depth">Max Depth</label>
+                <input type="number" id="max-depth" value="3" min="1" max="10" class="input input-sm">
+            </div>
         </div>
 
-        {{if .QueryOps}}
-        <div class="type-section">
-            <h3 class="section-title">Queries</h3>
-            {{range .QueryOps}}
-            <div class="type-item clickable" onclick="generateQuery('{{$.Schema.ID}}', '{{.Name}}', 'query')">
-                <span class="type-badge query">Q</span>
-                <span class="type-name">{{.Name}}</span>
-            </div>
-            {{end}}
-        </div>
-        {{end}}
+        <div id="op-list">
 
-        {{if .MutationOps}}
-        <div class="type-section">
-            <h3 class="section-title">Mutations</h3>
-            {{range .MutationOps}}
-            <div class="type-item clickable" onclick="generateQuery('{{$.Schema.ID}}', '{{.Name}}', 'mutation')">
-                <span class="type-badge mutation">M</span>
-                <span class="type-name">{{.Name}}</span>
+            {{if .QueryOps}}
+            <div class="op-group" id="group-query">
+                <div class="section-title">Queries <span class="op-count">{{len .QueryOps}}</span></div>
+                {{range .QueryOps}}
+                <div class="type-item op-item"
+                     data-op="{{.Name}}" data-kind="query"
+                     onclick="selectOp('{{$.Schema.ID}}', '{{.Name}}', 'query', this)">
+                    <span class="type-badge query">Q</span>
+                    <div class="op-info">
+                        <span class="type-name">{{.Name}}</span>
+                        <span class="op-return">{{.ReturnType.Signature}}</span>
+                    </div>
+                </div>
+                {{end}}
             </div>
             {{end}}
-        </div>
-        {{end}}
 
-        {{if .SubOps}}
-        <div class="type-section">
-            <h3 class="section-title">Subscriptions</h3>
-            {{range .SubOps}}
-            <div class="type-item clickable" onclick="generateQuery('{{$.Schema.ID}}', '{{.Name}}', 'subscription')">
-                <span class="type-badge subscription">S</span>
-                <span class="type-name">{{.Name}}</span>
+            {{if .MutationOps}}
+            <div class="op-group" id="group-mutation">
+                <div class="section-title">Mutations <span class="op-count">{{len .MutationOps}}</span></div>
+                {{range .MutationOps}}
+                <div class="type-item op-item"
+                     data-op="{{.Name}}" data-kind="mutation"
+                     onclick="selectOp('{{$.Schema.ID}}', '{{.Name}}', 'mutation', this)">
+                    <span class="type-badge mutation">M</span>
+                    <div class="op-info">
+                        <span class="type-name">{{.Name}}</span>
+                        <span class="op-return">{{.ReturnType.Signature}}</span>
+                    </div>
+                </div>
+                {{end}}
             </div>
             {{end}}
+
+            {{if .SubOps}}
+            <div class="op-group" id="group-subscription">
+                <div class="section-title">Subscriptions <span class="op-count">{{len .SubOps}}</span></div>
+                {{range .SubOps}}
+                <div class="type-item op-item"
+                     data-op="{{.Name}}" data-kind="subscription"
+                     onclick="selectOp('{{$.Schema.ID}}', '{{.Name}}', 'subscription', this)">
+                    <span class="type-badge subscription">S</span>
+                    <div class="op-info">
+                        <span class="type-name">{{.Name}}</span>
+                        <span class="op-return">{{.ReturnType.Signature}}</span>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+            {{end}}
+
         </div>
-        {{end}}
     </div>
 
-    <div class="generator-output">
-        <div id="generator-result" class="empty-state">
-            <p>Click an operation to generate its GraphQL query.</p>
+    <!-- ── Output ──────────────────────────────────────────────────── -->
+    <div class="generator-output" id="generator-output">
+        <div id="generator-result" class="gen-empty">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+            </svg>
+            <p>Select an operation from the sidebar to generate its query.</p>
+            <span class="gen-empty-hint">Supports queries, mutations &amp; subscriptions · max depth configurable</span>
         </div>
     </div>
+
 </div>
 
 <script src="/static/js/generator.js"></script>
