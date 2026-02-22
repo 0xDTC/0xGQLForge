@@ -2,6 +2,7 @@
 
 document.addEventListener('DOMContentLoaded', function() {
     loadSchemaNav();
+    initThemeUI();
 });
 
 function loadSchemaNav() {
@@ -22,4 +23,31 @@ function loadSchemaNav() {
             });
         })
         .catch(() => {});
+}
+
+// ── Theme toggle ───────────────────────────────────────────────────────────
+function initThemeUI() {
+    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    _applyThemeUI(theme);
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = current === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    _applyThemeUI(next);
+}
+
+function _applyThemeUI(theme) {
+    const icon  = document.getElementById('theme-icon');
+    const label = document.getElementById('theme-label');
+    if (!icon || !label) return;
+    if (theme === 'light') {
+        icon.textContent  = '☾';
+        label.textContent = 'Dark Mode';
+    } else {
+        icon.textContent  = '☀';
+        label.textContent = 'Light Mode';
+    }
 }
