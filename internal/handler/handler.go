@@ -11,11 +11,12 @@ import (
 
 // Handlers holds all HTTP handler dependencies.
 type Handlers struct {
-	SchemaRepo   *storage.SchemaRepo
-	TrafficRepo  *storage.TrafficRepo
-	AnalysisRepo *storage.AnalysisRepo
-	tmpls        map[string]*template.Template
-	proxyCtrl    ProxyController
+	SchemaRepo     *storage.SchemaRepo
+	TrafficRepo    *storage.TrafficRepo
+	AnalysisRepo   *storage.AnalysisRepo
+	tmpls          map[string]*template.Template
+	proxyCtrl      ProxyController
+	currentProject string // label for the active proxy session
 }
 
 // ProxyController is the interface the handlers use to control the proxy.

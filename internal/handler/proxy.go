@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -8,8 +9,6 @@ import (
 
 // ProxyView renders the proxy traffic viewer page.
 func (h *Handlers) ProxyView(w http.ResponseWriter, r *http.Request) {
-	traffic, _ := h.TrafficRepo.List(100)
-
 	proxyRunning := false
 	proxyAddr := ""
 	if h.proxyCtrl != nil {
@@ -18,10 +17,10 @@ func (h *Handlers) ProxyView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Title":        "Proxy",
-		"Traffic":      traffic,
-		"ProxyRunning": proxyRunning,
-		"ProxyAddr":    proxyAddr,
+		"Title":          "Proxy",
+		"ProxyRunning":   proxyRunning,
+		"ProxyAddr":      proxyAddr,
+		"CurrentProject": h.currentProject,
 	}
 	h.render(w, "proxy.html", data)
 }
@@ -49,13 +48,24 @@ func (h *Handlers) ProxyStart(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusServiceUnavailable, "proxy not configured")
 		return
 	}
+
+	var body struct {
+		ProjectName string `json:"projectName"`
+	}
+	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+	if body.ProjectName == "" {
+		body.ProjectName = "Session"
+	}
+	h.currentProject = body.ProjectName
+
 	if err := h.proxyCtrl.Start(); err != nil {
 		jsonErr(w, http.StatusInternalServerError, "start proxy: "+err.Error())
 		return
 	}
 	jsonResp(w, http.StatusOK, map[string]any{
-		"status": "running",
-		"addr":   h.proxyCtrl.Addr(),
+		"status":      "running",
+		"addr":        h.proxyCtrl.Addr(),
+		"projectName": h.currentProject,
 	})
 }
 
@@ -69,6 +79,7 @@ func (h *Handlers) ProxyStop(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, "stop proxy: "+err.Error())
 		return
 	}
+	h.currentProject = ""
 	jsonResp(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 

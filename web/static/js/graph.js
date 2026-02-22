@@ -100,6 +100,31 @@ document.addEventListener('DOMContentLoaded', function () {
         };
     }
 
+    // ── Root-kind reachability (BFS from each root node) ─────────────────────
+    function computeReachability(nodes, links) {
+        nodeReachableFrom = {};
+        nodes.forEach(n => {
+            if (!n.isRoot) return;
+            const kind    = n.rootKind;
+            const visited = new Set([n.id]);
+            const queue   = [n.id];
+            let qi = 0;
+            while (qi < queue.length) {
+                const id = queue[qi++];
+                if (!nodeReachableFrom[id]) nodeReachableFrom[id] = [];
+                if (!nodeReachableFrom[id].includes(kind)) nodeReachableFrom[id].push(kind);
+                links.forEach(l => {
+                    const s = l.source ? (l.source.id || l.source) : null;
+                    const t = l.target ? (l.target.id || l.target) : null;
+                    if (s === id && t && !visited.has(t)) {
+                        visited.add(t);
+                        queue.push(t);
+                    }
+                });
+            }
+        });
+    }
+
     // ── Hierarchical layout ───────────────────────────────────────────────────
     function computeLayout(nodes, links) {
         const nodeById = new Map(nodes.map(n => [n.id, n]));
@@ -179,11 +204,12 @@ document.addEventListener('DOMContentLoaded', function () {
         .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#4a5568');
 
     // ── Focus / highlight state ───────────────────────────────────────────────
-    let focusedId   = null;
-    let linkSel     = null;
-    let nodeSel     = null;
-    let activeLinks = [];  // resolved link objects from current render
-    let activeNodes = [];  // resolved node objects from current render
+    let focusedId        = null;
+    let linkSel          = null;
+    let nodeSel          = null;
+    let activeLinks      = [];  // resolved link objects from current render
+    let activeNodes      = [];  // resolved node objects from current render
+    let nodeReachableFrom = {}; // nodeId → ['query','mutation',…]
 
     function clearFocus() {
         focusedId = null;
@@ -192,40 +218,52 @@ document.addEventListener('DOMContentLoaded', function () {
             .attr('opacity', 1).attr('stroke', '#2d3548');
     }
 
+    // Shared BFS: full lineage (all ancestors → root + all descendants)
+    function lineageIds(id) {
+        const ids = new Set([id]);
+        const backQ = [id];
+        let qi = 0;
+        while (qi < backQ.length) {
+            const curr = backQ[qi++];
+            activeLinks.forEach(l => {
+                const s = l.source ? (l.source.id || l.source) : null;
+                const t = l.target ? (l.target.id || l.target) : null;
+                if (t === curr && s && !ids.has(s)) { ids.add(s); backQ.push(s); }
+            });
+        }
+        const fwdQ = [id];
+        qi = 0;
+        while (qi < fwdQ.length) {
+            const curr = fwdQ[qi++];
+            activeLinks.forEach(l => {
+                const s = l.source ? (l.source.id || l.source) : null;
+                const t = l.target ? (l.target.id || l.target) : null;
+                if (s === curr && t && !ids.has(t)) { ids.add(t); fwdQ.push(t); }
+            });
+        }
+        return ids;
+    }
+
+    function applyLineage(pathIds, nodeOpacity, linkOpacity, dur) {
+        if (nodeSel) nodeSel.transition().duration(dur)
+            .attr('opacity', d => pathIds.has(d.id) ? 1 : nodeOpacity);
+        if (linkSel) linkSel.transition().duration(dur)
+            .attr('opacity', d => {
+                const s = d.source ? (d.source.id || d.source) : null;
+                const t = d.target ? (d.target.id || d.target) : null;
+                return (pathIds.has(s) && pathIds.has(t)) ? 1 : linkOpacity;
+            })
+            .attr('stroke', d => {
+                const s = d.source ? (d.source.id || d.source) : null;
+                const t = d.target ? (d.target.id || d.target) : null;
+                return (pathIds.has(s) && pathIds.has(t)) ? '#94a3b8' : '#2d3548';
+            });
+    }
+
     function applyFocus(id) {
-        // Toggle off if clicking the already-focused node
         if (focusedId === id) { clearFocus(); return; }
         focusedId = id;
-
-        // Build set of directly connected node IDs
-        const connIds = new Set([id]);
-        activeLinks.forEach(l => {
-            const s = l.source ? (l.source.id || l.source) : null;
-            const t = l.target ? (l.target.id || l.target) : null;
-            if (s === id && t) connIds.add(t);
-            if (t === id && s) connIds.add(s);
-        });
-
-        // Dim unrelated nodes; fade to near-invisible
-        if (nodeSel) {
-            nodeSel.transition().duration(250)
-                .attr('opacity', d => connIds.has(d.id) ? 1 : 0.08);
-        }
-
-        // Dim unrelated links; brighten connected ones
-        if (linkSel) {
-            linkSel.transition().duration(250)
-                .attr('opacity', d => {
-                    const s = d.source ? (d.source.id || d.source) : null;
-                    const t = d.target ? (d.target.id || d.target) : null;
-                    return (s === id || t === id) ? 1 : 0.03;
-                })
-                .attr('stroke', d => {
-                    const s = d.source ? (d.source.id || d.source) : null;
-                    const t = d.target ? (d.target.id || d.target) : null;
-                    return (s === id || t === id) ? '#94a3b8' : '#2d3548';
-                });
-        }
+        applyLineage(lineageIds(id), 0.08, 0.03, 250);
     }
 
     // ── Toast ─────────────────────────────────────────────────────────────────
@@ -274,6 +312,7 @@ document.addEventListener('DOMContentLoaded', function () {
         computeLayout(data.nodes, data.links);
         activeLinks = data.links;
         activeNodes = data.nodes;
+        computeReachability(data.nodes, data.links);
 
         // ── Links ──────────────────────────────────────────────────────────────
         linkSel = g.append('g')
@@ -329,32 +368,22 @@ document.addEventListener('DOMContentLoaded', function () {
         // Tooltip
         nodeSel
             .on('mouseover', (_e, d) => {
-                // Hover dimming preview (only when nothing is focused)
+                // Hover lineage preview (only when nothing is focused)
                 if (!focusedId) {
-                    const connIds = new Set([d.id]);
-                    activeLinks.forEach(l => {
-                        const s = l.source ? (l.source.id || l.source) : null;
-                        const t = l.target ? (l.target.id || l.target) : null;
-                        if (s === d.id && t) connIds.add(t);
-                        if (t === d.id && s) connIds.add(s);
-                    });
-                    nodeSel.transition().duration(120)
-                        .attr('opacity', n => connIds.has(n.id) ? 1 : 0.35);
-                    linkSel.transition().duration(120)
-                        .attr('opacity', l => {
-                            const s = l.source ? (l.source.id || l.source) : null;
-                            const t = l.target ? (l.target.id || l.target) : null;
-                            return (s === d.id || t === d.id) ? 1 : 0.15;
-                        });
+                    applyLineage(lineageIds(d.id), 0.15, 0.08, 120);
                 }
                 tooltip.style.display = 'block';
-                const op   = nodeOps[d.id];
-                const hint = op
+                const op      = nodeOps[d.id];
+                const hint    = op
                     ? `<br><em style="color:#22c55e">Green dot → generate &amp; copy: ${op.opName}</em>`
+                    : '';
+                const reaches = nodeReachableFrom[d.id];
+                const viaLine = reaches && reaches.length
+                    ? `<br><span style="color:#f59e0b">Via: ${reaches.join(' &amp; ')}</span>`
                     : '';
                 tooltip.innerHTML =
                     `<strong>${d.id}</strong><br>Kind: ${d.kind}<br>Fields: ${d.fieldCount}` +
-                    (d.isRoot ? `<br>Root: ${d.rootKind}` : '') +
+                    (d.isRoot ? `<br>Root: ${d.rootKind}` : viaLine) +
                     (d.description ? `<br><span style="color:#94a3b8">${d.description}</span>` : '') +
                     hint;
             })
@@ -494,47 +523,20 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // ── Pan viewport to fully reveal a node ──────────────────────────────────
-    function panToNode(id) {
+    // ── Zoom to center on the focused node only ───────────────────────────────
+    function centerOnNode(id) {
         const nd = activeNodes.find(n => n.id === id);
         if (!nd) return;
-        const h   = nodeHeight(nd);
-        const hw  = NODE_W / 2;
-        const pad = 32;
-        const vw  = container.clientWidth;
-        const vh  = container.clientHeight;
-        const t   = d3.zoomTransform(svg.node());
-
-        // Node bounding box in screen-space
-        const sx1 = nd.x * t.k + t.x - hw  * t.k;
-        const sy1 = nd.y * t.k + t.y - (h / 2) * t.k;
-        const sx2 = nd.x * t.k + t.x + hw  * t.k;
-        const sy2 = nd.y * t.k + t.y + (h / 2) * t.k;
-
-        // If the node is taller/wider than the viewport at current zoom, fit it
-        if ((sx2 - sx1) > vw - 2 * pad || (sy2 - sy1) > vh - 2 * pad) {
-            const scale = Math.min(
-                (vw - 2 * pad) / (NODE_W),
-                (vh - 2 * pad) / h,
-                t.k  // never zoom in beyond current scale
-            );
-            const tx = vw / 2 - nd.x * scale;
-            const ty = vh / 2 - nd.y * scale;
-            svg.transition().duration(400)
-                .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
-            return;
-        }
-
-        // Otherwise just nudge the pan so all four edges are inside the viewport
-        let dx = 0, dy = 0;
-        if      (sx1 < pad)      dx = pad - sx1;
-        else if (sx2 > vw - pad) dx = (vw - pad) - sx2;
-        if      (sy1 < pad)      dy = pad - sy1;
-        else if (sy2 > vh - pad) dy = (vh - pad) - sy2;
-
-        if (dx !== 0 || dy !== 0) {
-            svg.transition().duration(350).call(zoom.translateBy, dx / t.k, dy / t.k);
-        }
+        const vw    = container.clientWidth;
+        const vh    = container.clientHeight;
+        const h     = nodeHeight(nd);
+        const scale = Math.min((vw - 120) / NODE_W, (vh - 80) / h, 1.6);
+        const tx    = vw / 2 - nd.x * scale;
+        const ty    = vh / 2 - nd.y * scale;
+        svg.transition().duration(400).call(
+            zoom.transform,
+            d3.zoomIdentity.translate(tx, ty).scale(scale)
+        );
     }
 
     // ── Focus ring on focused node ────────────────────────────────────────────
@@ -552,8 +554,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     .attr('opacity', 0.6);
             }
         }
-        // Pan viewport so the focused node is fully visible
-        if (focusedId) panToNode(focusedId);
+        // Zoom to center on the focused node
+        if (focusedId) centerOnNode(focusedId);
     }
 
     // Patch the click handler to use the ring version
