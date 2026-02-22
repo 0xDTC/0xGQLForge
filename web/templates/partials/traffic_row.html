@@ -1,0 +1,19 @@
+{{define "partials/traffic_row.html"}}
+<tr class="clickable new-row">
+    <td>{{.Timestamp.Format "15:04:05"}}</td>
+    <td>{{.Method}}</td>
+    <td>{{.Host}}</td>
+    <td>
+        {{if .OperationName}}
+        <span class="op-name">{{.OperationName}}</span>
+        {{else}}
+        <span class="op-anonymous">anonymous</span>
+        {{end}}
+    </td>
+    <td>
+        <span class="status-code status-{{if lt .ResponseCode 400}}ok{{else}}err{{end}}">
+            {{.ResponseCode}}
+        </span>
+    </td>
+</tr>
+{{end}}

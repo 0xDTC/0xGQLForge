@@ -1,0 +1,172 @@
+{{define "content"}}
+<div class="page-header">
+    <h1>{{.Schema.Name}}</h1>
+    <div class="page-actions">
+        <a href="/schema/{{.Schema.ID}}/graph" class="btn btn-primary">View Graph</a>
+        <a href="/generator/{{.Schema.ID}}" class="btn">Query Generator</a>
+        <a href="/analysis/{{.Schema.ID}}" class="btn btn-danger">Security Analysis</a>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{len .QueryOps}}</div>
+        <div class="stat-label">Queries</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{len .MutationOps}}</div>
+        <div class="stat-label">Mutations</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{len .SubOps}}</div>
+        <div class="stat-label">Subscriptions</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{len .UserTypes}}</div>
+        <div class="stat-label">Types</div>
+    </div>
+</div>
+
+<div class="schema-layout">
+    <div class="schema-sidebar">
+        <div class="search-box">
+            <input type="text" id="type-search" placeholder="Search types..." class="input"
+                oninput="filterTypes(this.value)">
+        </div>
+
+        {{if .QueryOps}}
+        <div class="type-section">
+            <h3 class="section-title">Queries</h3>
+            {{range .QueryOps}}
+            <div class="type-item operation-item" data-name="{{.Name}}"
+                hx-get="/partial/operation/{{$.Schema.ID}}/{{.Name}}"
+                hx-target="#detail-panel" hx-swap="innerHTML">
+                <span class="type-badge query">Q</span>
+                <span class="type-name">{{.Name}}</span>
+                <span class="arg-count">{{len .Args}} args</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .MutationOps}}
+        <div class="type-section">
+            <h3 class="section-title">Mutations</h3>
+            {{range .MutationOps}}
+            <div class="type-item operation-item" data-name="{{.Name}}"
+                hx-get="/partial/operation/{{$.Schema.ID}}/{{.Name}}"
+                hx-target="#detail-panel" hx-swap="innerHTML">
+                <span class="type-badge mutation">M</span>
+                <span class="type-name">{{.Name}}</span>
+                <span class="arg-count">{{len .Args}} args</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .SubOps}}
+        <div class="type-section">
+            <h3 class="section-title">Subscriptions</h3>
+            {{range .SubOps}}
+            <div class="type-item operation-item" data-name="{{.Name}}"
+                hx-get="/partial/operation/{{$.Schema.ID}}/{{.Name}}"
+                hx-target="#detail-panel" hx-swap="innerHTML">
+                <span class="type-badge subscription">S</span>
+                <span class="type-name">{{.Name}}</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .Objects}}
+        <div class="type-section">
+            <h3 class="section-title">Object Types</h3>
+            {{range .Objects}}
+            <div class="type-item" data-name="{{.Name}}"
+                hx-get="/partial/type/{{$.Schema.ID}}/{{.Name}}"
+                hx-target="#detail-panel" hx-swap="innerHTML">
+                <span class="type-badge object">O</span>
+                <span class="type-name">{{.Name}}</span>
+                <span class="field-count">{{len .Fields}} fields</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .InputObjects}}
+        <div class="type-section">
+            <h3 class="section-title">Input Types</h3>
+            {{range .InputObjects}}
+            <div class="type-item" data-name="{{.Name}}"
+                hx-get="/partial/type/{{$.Schema.ID}}/{{.Name}}"
+                hx-target="#detail-panel" hx-swap="innerHTML">
+                <span class="type-badge input">I</span>
+                <span class="type-name">{{.Name}}</span>
+                <span class="field-count">{{len .InputFields}} fields</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .Enums}}
+        <div class="type-section">
+            <h3 class="section-title">Enums</h3>
+            {{range .Enums}}
+            <div class="type-item" data-name="{{.Name}}"
+                hx-get="/partial/type/{{$.Schema.ID}}/{{.Name}}"
+                hx-target="#detail-panel" hx-swap="innerHTML">
+                <span class="type-badge enum">E</span>
+                <span class="type-name">{{.Name}}</span>
+                <span class="field-count">{{len .EnumValues}} values</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .Interfaces}}
+        <div class="type-section">
+            <h3 class="section-title">Interfaces</h3>
+            {{range .Interfaces}}
+            <div class="type-item" data-name="{{.Name}}"
+                hx-get="/partial/type/{{$.Schema.ID}}/{{.Name}}"
+                hx-target="#detail-panel" hx-swap="innerHTML">
+                <span class="type-badge interface">IF</span>
+                <span class="type-name">{{.Name}}</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .Unions}}
+        <div class="type-section">
+            <h3 class="section-title">Unions</h3>
+            {{range .Unions}}
+            <div class="type-item" data-name="{{.Name}}"
+                hx-get="/partial/type/{{$.Schema.ID}}/{{.Name}}"
+                hx-target="#detail-panel" hx-swap="innerHTML">
+                <span class="type-badge union">U</span>
+                <span class="type-name">{{.Name}}</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+
+    <div class="schema-detail" id="detail-panel">
+        <div class="empty-state">
+            <p>Select a type or operation from the sidebar to view details.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+function filterTypes(query) {
+    query = query.toLowerCase();
+    document.querySelectorAll('.type-item').forEach(el => {
+        const name = el.dataset.name.toLowerCase();
+        el.style.display = name.includes(query) ? '' : 'none';
+    });
+}
+</script>
+<script src="/static/js/generator.js"></script>
+{{end}}

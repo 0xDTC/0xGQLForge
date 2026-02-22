@@ -1,0 +1,139 @@
+{{define "content"}}
+<div class="page-header">
+    <h1>MITM Proxy</h1>
+    <div class="page-actions">
+        {{if .ProxyRunning}}
+        <span class="badge badge-active">Running on {{.ProxyAddr}}</span>
+        <button class="btn btn-danger" onclick="controlProxy('stop')">Stop Proxy</button>
+        {{else}}
+        <span class="badge badge-inactive">Stopped</span>
+        <button class="btn btn-primary" onclick="controlProxy('start')">Start Proxy</button>
+        {{end}}
+        <button class="btn" onclick="clearTraffic()">Clear Traffic</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Setup Instructions</h2>
+    </div>
+    <div class="card-body">
+        <p>1. Install the CA certificate: <code>~/.gqlforge/ca.pem</code></p>
+        <p>2. Configure your browser/tool proxy to: <code>{{.ProxyAddr}}</code></p>
+        <p>3. Browse any GraphQL API &mdash; requests will appear below automatically.</p>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Captured GraphQL Traffic</h2>
+        <span id="traffic-count" class="badge">{{len .Traffic}} requests</span>
+    </div>
+    <div class="card-body">
+        <table class="table" id="traffic-table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Method</th>
+                    <th>Host</th>
+                    <th>Operation</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="traffic-body">
+                {{range .Traffic}}
+                <tr class="clickable" onclick="showTrafficDetail('{{.ID}}')">
+                    <td>{{.Timestamp.Format "15:04:05"}}</td>
+                    <td>{{.Method}}</td>
+                    <td>{{.Host}}</td>
+                    <td>
+                        {{if .OperationName}}
+                        <span class="op-name">{{.OperationName}}</span>
+                        {{else}}
+                        <span class="op-anonymous">anonymous</span>
+                        {{end}}
+                    </td>
+                    <td>
+                        <span class="status-code status-{{if lt .ResponseCode 400}}ok{{else}}err{{end}}">
+                            {{.ResponseCode}}
+                        </span>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="traffic-detail" class="card" style="display:none;">
+    <div class="card-header"><h2>Request Detail</h2></div>
+    <div class="card-body" id="traffic-detail-body"></div>
+</div>
+
+<script>
+function controlProxy(action) {
+    fetch('/api/proxy/' + action, {method: 'POST'})
+        .then(r => r.json())
+        .then(() => location.reload());
+}
+
+function clearTraffic() {
+    fetch('/api/proxy/traffic', {method: 'DELETE'})
+        .then(() => location.reload());
+}
+
+function showTrafficDetail(id) {
+    fetch('/api/proxy/traffic?limit=1000')
+        .then(r => r.json())
+        .then(traffic => {
+            const req = traffic.find(t => t.id === id);
+            if (!req) return;
+            const detail = document.getElementById('traffic-detail');
+            const body = document.getElementById('traffic-detail-body');
+            detail.style.display = 'block';
+            body.innerHTML = `
+                <div class="detail-grid">
+                    <div class="detail-section">
+                        <h3>Query</h3>
+                        <pre class="code-block">${escapeHtml(req.query || 'N/A')}</pre>
+                    </div>
+                    <div class="detail-section">
+                        <h3>Variables</h3>
+                        <pre class="code-block">${JSON.stringify(req.variables, null, 2) || '{}'}</pre>
+                    </div>
+                    <div class="detail-section">
+                        <h3>Headers</h3>
+                        <pre class="code-block">${JSON.stringify(req.headers, null, 2) || '{}'}</pre>
+                    </div>
+                </div>
+            `;
+        });
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// SSE for live traffic updates
+if (document.querySelector('.badge-active')) {
+    const evtSource = new EventSource('/api/proxy/sse');
+    evtSource.onmessage = function(e) {
+        const req = JSON.parse(e.data);
+        const tbody = document.getElementById('traffic-body');
+        const row = document.createElement('tr');
+        row.className = 'clickable new-row';
+        row.onclick = () => showTrafficDetail(req.id);
+        row.innerHTML = `
+            <td>${new Date(req.timestamp).toLocaleTimeString()}</td>
+            <td>${req.method}</td>
+            <td>${req.host}</td>
+            <td>${req.operationName ? '<span class="op-name">' + req.operationName + '</span>' : '<span class="op-anonymous">anonymous</span>'}</td>
+            <td><span class="status-code status-${req.responseCode < 400 ? 'ok' : 'err'}">${req.responseCode}</span></td>
+        `;
+        tbody.insertBefore(row, tbody.firstChild);
+    };
+}
+</script>
+{{end}}

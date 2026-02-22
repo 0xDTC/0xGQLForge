@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>0xGQLForge{{if .Title}} - {{.Title}}{{end}}</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="/static/js/vendor/htmx.min.js" defer></script>
+    <script src="/static/js/vendor/d3.min.js" defer></script>
+    <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <span class="logo-icon">&#9670;</span>
+            <span class="logo-text">0xGQLForge</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="/" class="nav-link">Dashboard</a></li>
+            <li><a href="/proxy" class="nav-link">Proxy</a></li>
+        </ul>
+        <div class="nav-section-title">Schemas</div>
+        <ul class="nav-links schema-list" id="schema-nav">
+        </ul>
+    </nav>
+    <main class="content">
+        {{template "content" .}}
+    </main>
+</body>
+</html>

@@ -1,0 +1,126 @@
+{{define "content"}}
+<div class="page-header">
+    <h1>Dashboard</h1>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{.SchemaCount}}</div>
+        <div class="stat-label">Schemas</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{.TrafficCount}}</div>
+        <div class="stat-label">Captured Requests</div>
+    </div>
+    <div class="stat-card {{if .ProxyRunning}}stat-active{{end}}">
+        <div class="stat-value">{{if .ProxyRunning}}Active{{else}}Stopped{{end}}</div>
+        <div class="stat-label">Proxy ({{.ProxyAddr}})</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Paste Introspection JSON</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-group">
+            <label for="schema-name">Schema Name (optional)</label>
+            <input type="text" id="schema-name" placeholder="e.g. target-api" class="input">
+        </div>
+        <div class="form-group">
+            <label for="introspection-input">Introspection JSON</label>
+            <textarea id="introspection-input" class="textarea" rows="12"
+                placeholder='Paste your introspection query result JSON here...&#10;&#10;Supports formats:&#10;  {"data":{"__schema":{...}}}&#10;  {"__schema":{...}}&#10;  {"queryType":{...}, "types":[...]}'></textarea>
+        </div>
+        <button id="parse-btn" class="btn btn-primary" onclick="parseIntrospection()">
+            Parse Schema
+        </button>
+        <div id="parse-result" class="parse-result" style="display:none;"></div>
+    </div>
+</div>
+
+{{if .Schemas}}
+<div class="card">
+    <div class="card-header">
+        <h2>Stored Schemas</h2>
+    </div>
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Source</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Schemas}}
+                <tr>
+                    <td><a href="/schema/{{.ID}}">{{.Name}}</a></td>
+                    <td><span class="badge badge-{{.Source}}">{{.Source}}</span></td>
+                    <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                    <td>
+                        <a href="/schema/{{.ID}}" class="btn btn-sm">Explore</a>
+                        <a href="/schema/{{.ID}}/graph" class="btn btn-sm">Graph</a>
+                        <a href="/generator/{{.ID}}" class="btn btn-sm">Generator</a>
+                        <a href="/analysis/{{.ID}}" class="btn btn-sm btn-danger">Analyze</a>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}
+
+<script>
+function parseIntrospection() {
+    const input = document.getElementById('introspection-input').value.trim();
+    const name = document.getElementById('schema-name').value.trim();
+    const resultDiv = document.getElementById('parse-result');
+    const btn = document.getElementById('parse-btn');
+
+    if (!input) {
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'parse-result error';
+        resultDiv.textContent = 'Please paste introspection JSON first.';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Parsing...';
+
+    let url = '/api/introspection';
+    if (name) url += '?name=' + encodeURIComponent(name);
+
+    fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: input
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.textContent = 'Parse Schema';
+        resultDiv.style.display = 'block';
+
+        if (data.error) {
+            resultDiv.className = 'parse-result error';
+            resultDiv.textContent = 'Error: ' + data.error;
+        } else {
+            resultDiv.className = 'parse-result success';
+            resultDiv.innerHTML = `Schema parsed: ${data.typeCount} types, ${data.queryCount} queries, ${data.mutationCount} mutations, ${data.subCount} subscriptions. <a href="${data.redirectURL}">View Schema</a>`;
+            setTimeout(() => { window.location.href = data.redirectURL; }, 1500);
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.textContent = 'Parse Schema';
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'parse-result error';
+        resultDiv.textContent = 'Network error: ' + err.message;
+    });
+}
+</script>
+{{end}}

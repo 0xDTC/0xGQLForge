@@ -1,0 +1,190 @@
+{{define "content"}}
+<div class="page-header">
+    <h1>Security Analysis: {{.Schema.Name}}</h1>
+    <div class="page-actions">
+        <a href="/schema/{{.Schema.ID}}" class="btn">Back to Schema</a>
+        <button class="btn btn-primary" id="run-analysis-btn" onclick="runAnalysis('{{.Schema.ID}}')">
+            Run Full Analysis
+        </button>
+    </div>
+</div>
+
+<div id="analysis-results">
+    <div class="empty-state">
+        <p>Click "Run Full Analysis" to scan this schema for security issues.</p>
+    </div>
+</div>
+
+<div class="card" style="margin-top:1rem;">
+    <div class="card-header">
+        <h2>Introspection Bypass</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-group">
+            <label>Target GraphQL Endpoint URL</label>
+            <input type="text" id="bypass-url" placeholder="https://target.com/graphql" class="input">
+        </div>
+        <button class="btn btn-danger" onclick="tryBypass()">Try Bypass Techniques</button>
+        <div id="bypass-results"></div>
+    </div>
+</div>
+
+<div class="card" style="margin-top:1rem;">
+    <div class="card-header">
+        <h2>Field Fuzzer</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-group">
+            <label>Target GraphQL Endpoint URL</label>
+            <input type="text" id="fuzz-url" placeholder="https://target.com/graphql" class="input">
+        </div>
+        <button class="btn btn-danger" onclick="fuzzFields()">Fuzz Fields</button>
+        <div id="fuzz-results"></div>
+    </div>
+</div>
+
+<script>
+function runAnalysis(schemaId) {
+    const btn = document.getElementById('run-analysis-btn');
+    btn.disabled = true;
+    btn.textContent = 'Analyzing...';
+
+    fetch('/api/analysis/run', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({schemaId: schemaId})
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.textContent = 'Run Full Analysis';
+        renderAnalysis(data);
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.textContent = 'Run Full Analysis';
+        document.getElementById('analysis-results').innerHTML =
+            '<div class="parse-result error">Error: ' + err.message + '</div>';
+    });
+}
+
+function renderAnalysis(data) {
+    const container = document.getElementById('analysis-results');
+    let html = '';
+
+    // Dangerous Mutations
+    if (data.mutations && data.mutations.length > 0) {
+        html += '<div class="card analysis-card"><div class="card-header"><h2>Dangerous Mutations (' + data.mutations.length + ')</h2></div><div class="card-body"><table class="table"><thead><tr><th>Mutation</th><th>Reason</th><th>Severity</th></tr></thead><tbody>';
+        data.mutations.forEach(m => {
+            html += '<tr><td><code>' + m.name + '</code></td><td>' + m.reason + '</td><td><span class="badge badge-' + m.severity + '">' + m.severity + '</span></td></tr>';
+        });
+        html += '</tbody></table></div></div>';
+    }
+
+    // IDOR Candidates
+    if (data.idor && data.idor.length > 0) {
+        html += '<div class="card analysis-card"><div class="card-header"><h2>IDOR Candidates (' + data.idor.length + ')</h2></div><div class="card-body"><table class="table"><thead><tr><th>Field</th><th>Argument</th><th>Pattern</th><th>Risk</th></tr></thead><tbody>';
+        data.idor.forEach(i => {
+            html += '<tr><td><code>' + i.fieldName + '</code></td><td><code>' + i.argName + '</code></td><td>' + i.pattern + '</td><td><span class="badge badge-' + i.risk + '">' + i.risk + '</span></td></tr>';
+        });
+        html += '</tbody></table></div></div>';
+    }
+
+    // Complexity
+    if (data.complexity && data.complexity.length > 0) {
+        const risky = data.complexity.filter(c => c.risk !== 'low');
+        if (risky.length > 0) {
+            html += '<div class="card analysis-card"><div class="card-header"><h2>High Complexity Operations (' + risky.length + ')</h2></div><div class="card-body"><table class="table"><thead><tr><th>Operation</th><th>Score</th><th>Fields</th><th>List Nesting</th><th>Risk</th></tr></thead><tbody>';
+            risky.forEach(c => {
+                html += '<tr><td><code>' + c.operationName + '</code></td><td>' + c.score.toFixed(0) + '</td><td>' + c.fieldCount + '</td><td>' + c.listNesting + '</td><td><span class="badge badge-' + c.risk + '">' + c.risk + '</span></td></tr>';
+            });
+            html += '</tbody></table></div></div>';
+        }
+    }
+
+    // Depth
+    if (data.depth && data.depth.length > 0) {
+        const deep = data.depth.filter(d => d.maxDepth > 5);
+        if (deep.length > 0) {
+            html += '<div class="card analysis-card"><div class="card-header"><h2>Deep Query Paths (' + deep.length + ')</h2></div><div class="card-body"><table class="table"><thead><tr><th>Operation</th><th>Max Depth</th><th>Deepest Path</th></tr></thead><tbody>';
+            deep.forEach(d => {
+                html += '<tr><td><code>' + d.operationName + '</code></td><td>' + d.maxDepth + '</td><td><code>' + (d.fieldPaths[0] || '') + '</code></td></tr>';
+            });
+            html += '</tbody></table></div></div>';
+        }
+    }
+
+    // Auth patterns
+    if (data.authz) {
+        html += '<div class="card analysis-card"><div class="card-header"><h2>Authorization Patterns</h2></div><div class="card-body">';
+        html += '<p>Auth directives detected: ' + (data.authz.hasAuth ? 'Yes' : 'No') + '</p>';
+        if (data.authz.sensitiveOps && data.authz.sensitiveOps.length > 0) {
+            html += '<p>Sensitive operations: ' + data.authz.sensitiveOps.map(o => '<code>' + o + '</code>').join(', ') + '</p>';
+        }
+        html += '</div></div>';
+    }
+
+    if (!html) {
+        html = '<div class="parse-result success">No significant security issues found.</div>';
+    }
+
+    container.innerHTML = html;
+}
+
+function tryBypass() {
+    const url = document.getElementById('bypass-url').value.trim();
+    if (!url) { alert('Enter a target URL'); return; }
+
+    const div = document.getElementById('bypass-results');
+    div.innerHTML = '<p>Testing bypass techniques...</p>';
+
+    fetch('/api/bypass', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({targetUrl: url})
+    })
+    .then(r => r.json())
+    .then(results => {
+        let html = '<table class="table" style="margin-top:1rem;"><thead><tr><th>Technique</th><th>Description</th><th>Result</th></tr></thead><tbody>';
+        results.forEach(r => {
+            html += '<tr class="' + (r.success ? 'row-success' : '') + '"><td><code>' + r.technique + '</code></td><td>' + r.description + '</td><td>' + (r.success ? '<span class="badge badge-critical">SUCCESS</span>' : 'Failed') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        div.innerHTML = html;
+    });
+}
+
+function fuzzFields() {
+    const url = document.getElementById('fuzz-url').value.trim();
+    if (!url) { alert('Enter a target URL'); return; }
+
+    const div = document.getElementById('fuzz-results');
+    div.innerHTML = '<p>Fuzzing fields (this may take a moment)...</p>';
+
+    fetch('/api/fuzz', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({targetUrl: url, typeName: 'Query', words: []})
+    })
+    .then(r => r.json())
+    .then(result => {
+        let html = '<div style="margin-top:1rem;">';
+        if (result.validFields && result.validFields.length > 0) {
+            html += '<h3>Valid Fields Found (' + result.validFields.length + ')</h3><ul>';
+            result.validFields.forEach(f => html += '<li><code>' + f + '</code></li>');
+            html += '</ul>';
+        }
+        if (result.suggestions && result.suggestions.length > 0) {
+            html += '<h3>Suggestions from Server</h3><ul>';
+            result.suggestions.forEach(s => html += '<li><code>' + s + '</code></li>');
+            html += '</ul>';
+        }
+        if ((!result.validFields || result.validFields.length === 0) && (!result.suggestions || result.suggestions.length === 0)) {
+            html += '<p>No fields discovered. The server may not return suggestions.</p>';
+        }
+        html += '</div>';
+        div.innerHTML = html;
+    });
+}
+</script>
+{{end}}

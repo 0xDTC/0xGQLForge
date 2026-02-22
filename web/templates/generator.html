@@ -1,0 +1,61 @@
+{{define "content"}}
+<div class="page-header">
+    <h1>Query Generator: {{.Schema.Name}}</h1>
+    <div class="page-actions">
+        <a href="/schema/{{.Schema.ID}}" class="btn">Back to Schema</a>
+    </div>
+</div>
+
+<div class="generator-layout">
+    <div class="generator-sidebar">
+        <div class="form-group">
+            <label>Max Depth</label>
+            <input type="number" id="max-depth" value="3" min="1" max="10" class="input">
+        </div>
+
+        {{if .QueryOps}}
+        <div class="type-section">
+            <h3 class="section-title">Queries</h3>
+            {{range .QueryOps}}
+            <div class="type-item clickable" onclick="generateQuery('{{$.Schema.ID}}', '{{.Name}}', 'query')">
+                <span class="type-badge query">Q</span>
+                <span class="type-name">{{.Name}}</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .MutationOps}}
+        <div class="type-section">
+            <h3 class="section-title">Mutations</h3>
+            {{range .MutationOps}}
+            <div class="type-item clickable" onclick="generateQuery('{{$.Schema.ID}}', '{{.Name}}', 'mutation')">
+                <span class="type-badge mutation">M</span>
+                <span class="type-name">{{.Name}}</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .SubOps}}
+        <div class="type-section">
+            <h3 class="section-title">Subscriptions</h3>
+            {{range .SubOps}}
+            <div class="type-item clickable" onclick="generateQuery('{{$.Schema.ID}}', '{{.Name}}', 'subscription')">
+                <span class="type-badge subscription">S</span>
+                <span class="type-name">{{.Name}}</span>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+
+    <div class="generator-output">
+        <div id="generator-result" class="empty-state">
+            <p>Click an operation to generate its GraphQL query.</p>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/generator.js"></script>
+{{end}}

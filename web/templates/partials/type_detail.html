@@ -1,0 +1,113 @@
+{{define "partials/type_detail.html"}}
+<div class="detail-header">
+    <h2>
+        <span class="type-badge {{.Type.Kind}}">{{.Type.Kind}}</span>
+        {{.Type.Name}}
+    </h2>
+    {{if .Type.Description}}<p class="type-desc">{{.Type.Description}}</p>{{end}}
+</div>
+
+{{if .Type.Fields}}
+<div class="detail-section">
+    <h3>Fields ({{len .Type.Fields}})</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Args</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Type.Fields}}
+            <tr{{if .IsDeprecated}} class="deprecated"{{end}}>
+                <td><code>{{.Name}}</code></td>
+                <td><code class="type-sig">{{.Type.Signature}}</code></td>
+                <td>
+                    {{if .Args}}
+                    <details>
+                        <summary>{{len .Args}} args</summary>
+                        <ul class="arg-list">
+                            {{range .Args}}
+                            <li>
+                                <code>{{.Name}}: {{.Type.Signature}}</code>
+                                {{if .IsRequired}}<span class="required">required</span>{{end}}
+                                {{if .DefaultValue}}<span class="default">= {{.DefaultValue}}</span>{{end}}
+                            </li>
+                            {{end}}
+                        </ul>
+                    </details>
+                    {{end}}
+                </td>
+                <td>{{.Description}}{{if .IsDeprecated}} <span class="deprecated-tag">DEPRECATED: {{.DeprecationReason}}</span>{{end}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+
+{{if .Type.InputFields}}
+<div class="detail-section">
+    <h3>Input Fields ({{len .Type.InputFields}})</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Required</th>
+                <th>Default</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Type.InputFields}}
+            <tr>
+                <td><code>{{.Name}}</code></td>
+                <td><code class="type-sig">{{.Type.Signature}}</code></td>
+                <td>{{if .Type.IsNonNull}}Yes{{end}}</td>
+                <td>{{if .Args}}{{range .Args}}{{.DefaultValue}}{{end}}{{end}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+
+{{if .Type.EnumValues}}
+<div class="detail-section">
+    <h3>Enum Values ({{len .Type.EnumValues}})</h3>
+    <ul class="enum-list">
+        {{range .Type.EnumValues}}
+        <li{{if .IsDeprecated}} class="deprecated"{{end}}>
+            <code>{{.Name}}</code>
+            {{if .Description}} &mdash; {{.Description}}{{end}}
+            {{if .IsDeprecated}}<span class="deprecated-tag">DEPRECATED</span>{{end}}
+        </li>
+        {{end}}
+    </ul>
+</div>
+{{end}}
+
+{{if .Type.Interfaces}}
+<div class="detail-section">
+    <h3>Implements</h3>
+    <div class="tag-list">
+        {{range .Type.Interfaces}}
+        <span class="tag">{{.}}</span>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{if .Type.PossibleTypes}}
+<div class="detail-section">
+    <h3>Possible Types</h3>
+    <div class="tag-list">
+        {{range .Type.PossibleTypes}}
+        <span class="tag">{{.}}</span>
+        {{end}}
+    </div>
+</div>
+{{end}}
+{{end}}

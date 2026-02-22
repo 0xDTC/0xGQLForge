@@ -1,0 +1,47 @@
+{{define "partials/query_result.html"}}
+<div class="detail-header">
+    <h2>
+        <span class="type-badge {{.Operation.Kind}}">{{.Operation.Kind}}</span>
+        {{.Operation.Name}}
+    </h2>
+    {{if .Operation.Description}}<p class="type-desc">{{.Operation.Description}}</p>{{end}}
+</div>
+
+<div class="detail-section">
+    <h3>Return Type</h3>
+    <code class="type-sig">{{.Operation.ReturnType.Signature}}</code>
+</div>
+
+{{if .Operation.Args}}
+<div class="detail-section">
+    <h3>Arguments ({{len .Operation.Args}})</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Required</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Operation.Args}}
+            <tr>
+                <td><code>{{.Name}}</code></td>
+                <td><code class="type-sig">{{.Type.Signature}}</code></td>
+                <td>{{if .IsRequired}}<span class="required">Yes</span>{{end}}</td>
+                <td>{{.Description}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+
+<div class="detail-section">
+    <button class="btn btn-primary"
+        onclick="generateQuery('{{.Schema.ID}}', '{{.Operation.Name}}', '{{.Operation.Kind}}')">
+        Generate Query
+    </button>
+</div>
+{{end}}
