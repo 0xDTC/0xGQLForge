@@ -13,11 +13,11 @@ document.addEventListener('DOMContentLoaded', function () {
     svg.attr('viewBox', [0, 0, width, height]);
 
     // ── Layout constants ──────────────────────────────────────────────────────
-    const NODE_W     = 230;
+    const NODE_W     = 280;
     const HEADER_H   = 36;
     const FIELD_H    = 22;
     const MAX_FIELDS = 14;
-    const COL_X_GAP  = 80;
+    const COL_X_GAP  = 90;
     const ROW_Y_GAP  = 24;
 
     // ── Color scheme ──────────────────────────────────────────────────────────
@@ -38,6 +38,11 @@ document.addEventListener('DOMContentLoaded', function () {
     function getStyle(d) {
         if (d.isRoot) return rootStyle[d.rootKind] || kindStyle['OBJECT'];
         return kindStyle[d.kind] || kindStyle['SCALAR'];
+    }
+
+    // Truncate SVG text to prevent overlap
+    function truncText(s, max) {
+        return s && s.length > max ? s.slice(0, max - 1) + '…' : (s || '');
     }
 
     // ── Node geometry ─────────────────────────────────────────────────────────
@@ -178,6 +183,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let linkSel     = null;
     let nodeSel     = null;
     let activeLinks = [];  // resolved link objects from current render
+    let activeNodes = [];  // resolved node objects from current render
 
     function clearFocus() {
         focusedId = null;
@@ -267,6 +273,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         computeLayout(data.nodes, data.links);
         activeLinks = data.links;
+        activeNodes = data.nodes;
 
         // ── Links ──────────────────────────────────────────────────────────────
         linkSel = g.append('g')
@@ -439,14 +446,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 .attr('x', -hw + 10).attr('y', ry + FIELD_H / 2)
                 .attr('dominant-baseline', 'middle')
                 .attr('font-size', '10.5px').attr('fill', '#cbd5e1')
-                .text(f.name);
+                .text(truncText(f.name, 20));
             if (f.typeSig) {
                 ng.append('text')
                     .attr('x', hw - (f.isLink ? 16 : 10)).attr('y', ry + FIELD_H / 2)
                     .attr('text-anchor', 'end').attr('dominant-baseline', 'middle')
                     .attr('font-size', '9.5px')
                     .attr('fill', f.isLink ? style.link : '#475569')
-                    .text(f.typeSig);
+                    .text(truncText(f.typeSig, 18));
             }
             if (f.isLink) {
                 ng.append('circle')
@@ -487,14 +494,54 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    // ── Pan viewport to fully reveal a node ──────────────────────────────────
+    function panToNode(id) {
+        const nd = activeNodes.find(n => n.id === id);
+        if (!nd) return;
+        const h   = nodeHeight(nd);
+        const hw  = NODE_W / 2;
+        const pad = 32;
+        const vw  = container.clientWidth;
+        const vh  = container.clientHeight;
+        const t   = d3.zoomTransform(svg.node());
+
+        // Node bounding box in screen-space
+        const sx1 = nd.x * t.k + t.x - hw  * t.k;
+        const sy1 = nd.y * t.k + t.y - (h / 2) * t.k;
+        const sx2 = nd.x * t.k + t.x + hw  * t.k;
+        const sy2 = nd.y * t.k + t.y + (h / 2) * t.k;
+
+        // If the node is taller/wider than the viewport at current zoom, fit it
+        if ((sx2 - sx1) > vw - 2 * pad || (sy2 - sy1) > vh - 2 * pad) {
+            const scale = Math.min(
+                (vw - 2 * pad) / (NODE_W),
+                (vh - 2 * pad) / h,
+                t.k  // never zoom in beyond current scale
+            );
+            const tx = vw / 2 - nd.x * scale;
+            const ty = vh / 2 - nd.y * scale;
+            svg.transition().duration(400)
+                .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+            return;
+        }
+
+        // Otherwise just nudge the pan so all four edges are inside the viewport
+        let dx = 0, dy = 0;
+        if      (sx1 < pad)      dx = pad - sx1;
+        else if (sx2 > vw - pad) dx = (vw - pad) - sx2;
+        if      (sy1 < pad)      dy = pad - sy1;
+        else if (sy2 > vh - pad) dy = (vh - pad) - sy2;
+
+        if (dx !== 0 || dy !== 0) {
+            svg.transition().duration(350).call(zoom.translateBy, dx / t.k, dy / t.k);
+        }
+    }
+
     // ── Focus ring on focused node ────────────────────────────────────────────
-    // Override applyFocus to also animate the ring on the focused card
-    const _origApplyFocus = applyFocus;  // save reference
-    // Re-define to also update focus rings
+    const _origApplyFocus = applyFocus;
     function applyFocusWithRing(id) {
         _origApplyFocus(id);
         if (nodeSel) {
-            // Show ring only on the focused node
             nodeSel.selectAll('.focus-ring')
                 .transition().duration(250)
                 .attr('opacity', 0);
@@ -505,6 +552,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     .attr('opacity', 0.6);
             }
         }
+        // Pan viewport so the focused node is fully visible
+        if (focusedId) panToNode(focusedId);
     }
 
     // Patch the click handler to use the ring version
