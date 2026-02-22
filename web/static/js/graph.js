@@ -1,4 +1,4 @@
-// 0xGQLForge — D3.js Schema Visualization
+// 0xGQLForge — D3.js Schema Visualization (card layout)
 
 document.addEventListener('DOMContentLoaded', function() {
     if (typeof graphData === 'undefined' || !graphData.nodes) return;
@@ -13,33 +13,36 @@ document.addEventListener('DOMContentLoaded', function() {
 
     svg.attr('viewBox', [0, 0, width, height]);
 
-    // Color mapping by type kind
-    const kindColors = {
-        'OBJECT': '#22c55e',
-        'INPUT_OBJECT': '#a78bfa',
-        'ENUM': '#f97316',
-        'INTERFACE': '#06b6d4',
-        'UNION': '#ec4899',
-        'SCALAR': '#64748b'
+    // Card dimensions
+    const NODE_W = 160;
+    const NODE_H = 56;
+
+    // Color scheme: border color + fill tint per kind
+    const kindStyle = {
+        'OBJECT':       { border: '#22c55e', fill: '#0d2015' },
+        'INPUT_OBJECT': { border: '#a78bfa', fill: '#1a1030' },
+        'ENUM':         { border: '#f97316', fill: '#201408' },
+        'INTERFACE':    { border: '#06b6d4', fill: '#061820' },
+        'UNION':        { border: '#ec4899', fill: '#200d18' },
+        'SCALAR':       { border: '#64748b', fill: '#0e1118' },
     };
 
-    const rootColors = {
-        'query': '#3b82f6',
-        'mutation': '#ef4444',
-        'subscription': '#eab308'
+    const rootStyle = {
+        'query':        { border: '#3b82f6', fill: '#080f20' },
+        'mutation':     { border: '#ef4444', fill: '#1e0808' },
+        'subscription': { border: '#eab308', fill: '#1c1800' },
     };
 
-    // Extract schema ID from the page URL (/schema/{id}/graph)
+    // Extract schema ID from URL (/schema/{id}/graph)
     const schemaId = window.location.pathname.split('/')[2] || '';
 
-    // Build a lookup: for each non-root node, find which operation (link from root)
-    // points to it, so we can generate a query on click.
-    const rootKindMap = {}; // nodeId -> rootKind ("query"/"mutation"/"subscription")
+    // Build root kind lookup: nodeId -> rootKind
+    const rootKindMap = {};
     graphData.nodes.forEach(n => {
         if (n.isRoot) rootKindMap[n.id] = n.rootKind;
     });
 
-    // Map: targetNodeId -> { opName, kind } for nodes directly reachable from a root type
+    // Map: targetNodeId -> { opName, kind } for nodes directly off a root type
     const nodeOps = {};
     graphData.links.forEach(l => {
         const srcId = typeof l.source === 'object' ? l.source.id : l.source;
@@ -51,7 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Keep a pristine copy of nodes/links for re-filtering (D3 mutates them)
+    // Pristine copies — D3 mutates source/target in-place
     const pristineNodes = JSON.parse(JSON.stringify(graphData.nodes));
     const pristineLinks = JSON.parse(JSON.stringify(graphData.links));
 
@@ -64,39 +67,51 @@ document.addEventListener('DOMContentLoaded', function() {
             nodes = nodes.filter(n => n.kind !== 'SCALAR');
         }
         const nodeIds = new Set(nodes.map(n => n.id));
-        const links = pristineLinks.filter(l => nodeIds.has(l.source) && nodeIds.has(l.target));
-        // Deep clone to prevent D3 mutation from affecting pristine data
+        const links = pristineLinks.filter(l => {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            return nodeIds.has(s) && nodeIds.has(t);
+        });
         return {
             nodes: JSON.parse(JSON.stringify(nodes)),
             links: JSON.parse(JSON.stringify(links))
         };
     }
 
-    // Create zoom behavior
+    // Compute intersection of a line from (cx,cy) to (tx,ty) with a rect of half-extents (hw,hh)
+    function edgePoint(cx, cy, tx, ty, hw, hh) {
+        const dx = tx - cx;
+        const dy = ty - cy;
+        if (dx === 0 && dy === 0) return { x: cx, y: cy };
+        const scaleX = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+        const scaleY = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+        const scale = Math.min(scaleX, scaleY);
+        return { x: cx + dx * scale, y: cy + dy * scale };
+    }
+
+    // Zoom
     const zoom = d3.zoom()
-        .scaleExtent([0.1, 4])
-        .on('zoom', (event) => {
-            g.attr('transform', event.transform);
-        });
+        .scaleExtent([0.08, 4])
+        .on('zoom', (event) => { g.attr('transform', event.transform); });
 
     svg.call(zoom);
 
     const g = svg.append('g');
 
-    // Arrow marker for directed edges
+    // Arrow marker
     svg.append('defs').append('marker')
         .attr('id', 'arrowhead')
         .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 20)
+        .attr('refX', 8)
         .attr('refY', 0)
-        .attr('markerWidth', 6)
-        .attr('markerHeight', 6)
+        .attr('markerWidth', 5)
+        .attr('markerHeight', 5)
         .attr('orient', 'auto')
         .append('path')
         .attr('d', 'M0,-5L10,0L0,5')
-        .attr('fill', '#2d3548');
+        .attr('fill', '#4a5568');
 
-    // Toast notification for clipboard feedback
+    // Toast
     function showToast(msg, isError) {
         let toast = document.getElementById('graph-toast');
         if (!toast) {
@@ -110,18 +125,15 @@ document.addEventListener('DOMContentLoaded', function() {
         toast.style.opacity = '1';
         toast.textContent = msg;
         clearTimeout(toast._timer);
-        toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+        toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2200);
     }
 
-    // Click handler: generate query for operations reachable from this node
     function onNodeClick(event, d) {
-        // Check if this node is directly returned by a root operation
         const op = nodeOps[d.id];
         if (op && schemaId) {
             generateAndCopy(schemaId, op.opName, op.kind);
             return;
         }
-        // If this IS a root type node, show a hint
         if (d.isRoot) {
             showToast('Click a connected type to generate its query', false);
             return;
@@ -133,131 +145,183 @@ document.addEventListener('DOMContentLoaded', function() {
         showToast('Generating ' + opName + '...', false);
         fetch('/api/generate', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ schemaId: sid, operation: opName, kind: kind, maxDepth: 3 })
         })
         .then(r => r.json())
         .then(data => {
-            if (data.error) {
-                showToast('Error: ' + data.error, true);
-                return;
-            }
+            if (data.error) { showToast('Error: ' + data.error, true); return; }
             navigator.clipboard.writeText(data.query).then(() => {
-                showToast('Copied ' + opName + ' query to clipboard', false);
+                showToast('Copied ' + opName + ' query!', false);
             }).catch(() => {
                 showToast('Generated but clipboard access denied', true);
             });
         })
-        .catch(err => {
-            showToast('Error: ' + err.message, true);
-        });
+        .catch(err => { showToast('Error: ' + err.message, true); });
     }
 
     function render(data) {
-        // Stop previous simulation
         if (simulation) simulation.stop();
-
         g.selectAll('*').remove();
 
+        const hw = NODE_W / 2;
+        const hh = NODE_H / 2;
+
         simulation = d3.forceSimulation(data.nodes)
-            .force('link', d3.forceLink(data.links).id(d => d.id).distance(120))
-            .force('charge', d3.forceManyBody().strength(-300))
+            .force('link', d3.forceLink(data.links).id(d => d.id).distance(220))
+            .force('charge', d3.forceManyBody().strength(-600))
             .force('center', d3.forceCenter(width / 2, height / 2))
-            .force('collision', d3.forceCollide().radius(40));
+            .force('collision', d3.forceCollide().radius(Math.max(hw, hh) + 20));
 
         // Links
-        const linkElements = g.append('g')
-            .selectAll('line')
+        const linkG = g.append('g');
+        const linkLines = linkG.selectAll('line')
             .data(data.links)
             .join('line')
-            .attr('class', 'link-line')
+            .attr('stroke', '#2d3548')
             .attr('stroke-width', d => d.isList ? 2 : 1)
-            .attr('stroke-dasharray', d => d.isNonNull ? 'none' : '4 2')
+            .attr('stroke-dasharray', d => d.isNonNull ? 'none' : '5 3')
             .attr('marker-end', 'url(#arrowhead)');
 
-        // Link labels
-        const linkLabels = g.append('g')
-            .selectAll('text')
+        // Link labels (shown on link hover via CSS)
+        const linkLabels = linkG.selectAll('text')
             .data(data.links)
             .join('text')
-            .attr('class', 'link-label')
+            .attr('text-anchor', 'middle')
+            .attr('font-size', '9px')
+            .attr('fill', '#64748b')
+            .attr('pointer-events', 'none')
+            .style('opacity', 0)
             .text(d => d.fieldName);
 
-        // Nodes
-        const nodeElements = g.append('g')
-            .selectAll('circle')
-            .data(data.nodes)
-            .join('circle')
-            .attr('r', d => {
-                if (d.isRoot) return 18;
-                return Math.max(8, Math.min(16, 6 + d.fieldCount * 0.5));
+        linkLines
+            .on('mouseover', function(_event, d) {
+                d3.select(this).attr('stroke', '#94a3b8');
+                linkLabels.filter(l => l === d).style('opacity', 1);
             })
-            .attr('fill', d => {
-                if (d.isRoot) return rootColors[d.rootKind] || kindColors[d.kind];
-                return kindColors[d.kind] || '#64748b';
-            })
-            .attr('stroke', d => d.isRoot ? '#e2e8f0' : '#232a3b')
-            .attr('stroke-width', d => d.isRoot ? 2.5 : 1)
-            .attr('cursor', 'pointer')
-            .call(drag(simulation));
+            .on('mouseout', function(_event, d) {
+                d3.select(this).attr('stroke', '#2d3548');
+                linkLabels.filter(l => l === d).style('opacity', 0);
+            });
 
-        // Node labels
-        const labelElements = g.append('g')
-            .selectAll('text')
+        // Node groups
+        const nodeG = g.append('g');
+        const nodeGroups = nodeG.selectAll('g')
             .data(data.nodes)
-            .join('text')
-            .attr('class', 'node-label')
-            .attr('dy', d => {
-                const r = d.isRoot ? 18 : Math.max(8, Math.min(16, 6 + d.fieldCount * 0.5));
-                return r + 14;
+            .join('g')
+            .attr('cursor', 'pointer')
+            .call(drag(simulation))
+            .on('click', onNodeClick);
+
+        // Card background rect
+        nodeGroups.append('rect')
+            .attr('x', -hw)
+            .attr('y', -hh)
+            .attr('width', NODE_W)
+            .attr('height', NODE_H)
+            .attr('rx', 6)
+            .attr('ry', 6)
+            .attr('fill', d => {
+                if (d.isRoot) return (rootStyle[d.rootKind] || {}).fill || '#0d1117';
+                return (kindStyle[d.kind] || {}).fill || '#0d1117';
             })
+            .attr('stroke', d => {
+                if (d.isRoot) return (rootStyle[d.rootKind] || {}).border || '#475569';
+                return (kindStyle[d.kind] || {}).border || '#475569';
+            })
+            .attr('stroke-width', d => d.isRoot ? 2.5 : 1.5)
+            .attr('filter', d => d.isRoot ? 'url(#glow)' : null);
+
+        // Glow filter for root nodes
+        const defs = svg.select('defs');
+        const glowFilter = defs.append('filter').attr('id', 'glow').attr('x', '-30%').attr('y', '-30%').attr('width', '160%').attr('height', '160%');
+        glowFilter.append('feGaussianBlur').attr('stdDeviation', '3').attr('result', 'blur');
+        const feMerge = glowFilter.append('feMerge');
+        feMerge.append('feMergeNode').attr('in', 'blur');
+        feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+        // Kind badge — top-left inside card
+        nodeGroups.append('text')
+            .attr('x', -hw + 7)
+            .attr('y', -hh + 11)
+            .attr('font-size', '8px')
+            .attr('font-family', 'monospace')
+            .attr('fill', d => {
+                if (d.isRoot) return (rootStyle[d.rootKind] || {}).border || '#94a3b8';
+                return (kindStyle[d.kind] || {}).border || '#94a3b8';
+            })
+            .text(d => d.isRoot ? d.rootKind.toUpperCase() : d.kind);
+
+        // Field count — top-right inside card
+        nodeGroups.append('text')
+            .attr('x', hw - 7)
+            .attr('y', -hh + 11)
+            .attr('text-anchor', 'end')
+            .attr('font-size', '8px')
+            .attr('fill', '#475569')
+            .text(d => d.fieldCount > 0 ? d.fieldCount + ' fields' : '');
+
+        // Type name — centered
+        nodeGroups.append('text')
+            .attr('x', 0)
+            .attr('y', 5)
             .attr('text-anchor', 'middle')
-            .attr('font-weight', d => d.isRoot ? 'bold' : 'normal')
+            .attr('dominant-baseline', 'middle')
+            .attr('font-size', d => d.id.length > 18 ? '10px' : '12px')
+            .attr('font-weight', d => d.isRoot ? '700' : '500')
+            .attr('fill', '#e2e8f0')
             .text(d => d.id);
 
-        // Hover interactions
-        nodeElements
-            .on('mouseover', (event, d) => {
+        // Click hint dot for nodes with an operation
+        nodeGroups.filter(d => !!nodeOps[d.id])
+            .append('circle')
+            .attr('cx', hw - 6)
+            .attr('cy', hh - 6)
+            .attr('r', 4)
+            .attr('fill', '#22c55e')
+            .attr('stroke', '#0a0e14')
+            .attr('stroke-width', 1.5);
+
+        // Hover tooltip
+        nodeGroups
+            .on('mouseover', (_event, d) => {
                 tooltip.style.display = 'block';
                 const op = nodeOps[d.id];
-                const opHint = op ? '<br><em>Click to generate & copy: ' + op.opName + '</em>' : '';
+                const hint = op ? '<br><em style="color:#22c55e">Click to generate &amp; copy: ' + op.opName + '</em>' : '';
                 tooltip.innerHTML =
                     '<strong>' + d.id + '</strong><br>' +
                     'Kind: ' + d.kind + '<br>' +
                     'Fields: ' + d.fieldCount +
                     (d.isRoot ? '<br>Root: ' + d.rootKind : '') +
-                    (d.description ? '<br>' + d.description : '') +
-                    opHint;
+                    (d.description ? '<br><span style="color:#94a3b8">' + d.description + '</span>' : '') +
+                    hint;
             })
             .on('mousemove', (event) => {
                 const rect = container.getBoundingClientRect();
                 tooltip.style.left = (event.clientX - rect.left + 15) + 'px';
-                tooltip.style.top = (event.clientY - rect.top - 10) + 'px';
+                tooltip.style.top  = (event.clientY - rect.top  - 10) + 'px';
             })
             .on('mouseout', () => {
                 tooltip.style.display = 'none';
-            })
-            .on('click', onNodeClick);
+            });
 
-        // Simulation tick
+        // Tick: position links to card edges, move node groups
         simulation.on('tick', () => {
-            linkElements
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y);
+            linkLines.each(function(d) {
+                const sx = d.source.x, sy = d.source.y;
+                const tx = d.target.x, ty = d.target.y;
+                const p1 = edgePoint(sx, sy, tx, ty, hw, hh);
+                const p2 = edgePoint(tx, ty, sx, sy, hw, hh);
+                d3.select(this)
+                    .attr('x1', p1.x).attr('y1', p1.y)
+                    .attr('x2', p2.x).attr('y2', p2.y);
+            });
 
             linkLabels
                 .attr('x', d => (d.source.x + d.target.x) / 2)
-                .attr('y', d => (d.source.y + d.target.y) / 2);
+                .attr('y', d => (d.source.y + d.target.y) / 2 - 5);
 
-            nodeElements
-                .attr('cx', d => d.x)
-                .attr('cy', d => d.y);
-
-            labelElements
-                .attr('x', d => d.x)
-                .attr('y', d => d.y);
+            nodeGroups.attr('transform', d => `translate(${d.x},${d.y})`);
         });
     }
 
@@ -265,23 +329,19 @@ document.addEventListener('DOMContentLoaded', function() {
         return d3.drag()
             .on('start', (event, d) => {
                 if (!event.active) sim.alphaTarget(0.3).restart();
-                d.fx = d.x;
-                d.fy = d.y;
+                d.fx = d.x; d.fy = d.y;
             })
             .on('drag', (event, d) => {
-                d.fx = event.x;
-                d.fy = event.y;
+                d.fx = event.x; d.fy = event.y;
             })
             .on('end', (event, d) => {
                 if (!event.active) sim.alphaTarget(0);
-                d.fx = null;
-                d.fy = null;
+                d.fx = null; d.fy = null;
             });
     }
 
     render(filterData());
 
-    // Global functions for controls
     window.resetZoom = function() {
         svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
     };
