@@ -1,0 +1,63 @@
+{{define "content"}}
+<div class="page-header">
+    <h1>Proxy Projects</h1>
+    <div class="page-actions">
+        <a href="/proxy" class="btn btn-primary">Go to Proxy</a>
+    </div>
+</div>
+
+{{if .Projects}}
+<div class="card">
+    <div class="card-header">
+        <h2>Projects <span style="color:var(--text-muted);font-weight:400;font-size:.8rem">({{len .Projects}})</span></h2>
+    </div>
+    <div class="card-body" style="padding:0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Proxy Addr</th>
+                    <th>Requests</th>
+                    <th>Schema</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Projects}}
+                <tr>
+                    <td>
+                        <a href="/projects/{{.ID}}" style="color:var(--accent);text-decoration:none;font-weight:500">
+                            {{.Name}}
+                        </a>
+                    </td>
+                    <td style="font-family:var(--font-mono);font-size:.8rem;color:var(--text-muted)">
+                        {{if .ProxyAddr}}{{.ProxyAddr}}{{else}}&mdash;{{end}}
+                    </td>
+                    <td>
+                        <span class="badge">{{.TrafficCount}}</span>
+                    </td>
+                    <td>
+                        {{if .SchemaID}}
+                        <a href="/schema/{{.SchemaID}}" class="btn btn-sm">View Schema</a>
+                        {{else}}
+                        <span style="color:var(--text-muted);font-size:.8rem">None</span>
+                        {{end}}
+                    </td>
+                    <td style="color:var(--text-muted);font-size:.8rem">{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                    <td>
+                        <a href="/projects/{{.ID}}" class="btn btn-sm">Detail</a>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{else}}
+<div class="empty-state">
+    <p>No proxy projects yet. Start a proxy session and name it to create a project.</p>
+    <a href="/proxy" class="btn btn-primary" style="margin-top:1rem">Go to Proxy &rarr;</a>
+</div>
+{{end}}
+{{end}}

@@ -1,10 +1,15 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
+
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // ProxyView renders the proxy traffic viewer page.
@@ -62,11 +67,36 @@ func (h *Handlers) ProxyStart(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, "start proxy: "+err.Error())
 		return
 	}
+
+	// Persist the project and tag subsequent traffic with its ID.
+	if h.ProjectRepo != nil {
+		proj := &schema.Project{
+			ID:        generateProjectID(),
+			Name:      body.ProjectName,
+			ProxyAddr: h.proxyCtrl.Addr(),
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		}
+		if err := h.ProjectRepo.Create(proj); err != nil {
+			fmt.Printf("create project: %v\n", err)
+		} else {
+			h.proxyCtrl.SetProjectID(proj.ID)
+		}
+	}
+
 	jsonResp(w, http.StatusOK, map[string]any{
 		"status":      "running",
 		"addr":        h.proxyCtrl.Addr(),
 		"projectName": h.currentProject,
 	})
+}
+
+func generateProjectID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("proj_%d", time.Now().UnixNano())
+	}
+	return "proj_" + hex.EncodeToString(b)
 }
 
 // ProxyStop stops the MITM proxy.
@@ -80,6 +110,7 @@ func (h *Handlers) ProxyStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.currentProject = ""
+	h.proxyCtrl.SetProjectID("")
 	jsonResp(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 

@@ -61,6 +61,7 @@ func (db *DB) Close() error {
 func (db *DB) migrate() error {
 	migrations := []string{
 		migrationV1,
+		migrationV2,
 	}
 
 	// Create migration tracking table
@@ -163,4 +164,22 @@ CREATE TABLE IF NOT EXISTS wordlists (
 	words_json TEXT NOT NULL,
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+`
+
+const migrationV2 = `
+CREATE TABLE IF NOT EXISTS projects (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	proxy_addr TEXT,
+	schema_id TEXT REFERENCES schemas(id),
+	traffic_count INTEGER DEFAULT 0,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_projects_created ON projects(created_at);
+
+ALTER TABLE traffic ADD COLUMN project_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_traffic_project ON traffic(project_id);
 `

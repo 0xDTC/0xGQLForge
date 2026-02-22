@@ -209,6 +209,17 @@ type GraphLink struct {
 	IsNonNull bool   `json:"isNonNull"`
 }
 
+// Project represents a proxy capture session with associated traffic and optional inferred schema.
+type Project struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	ProxyAddr    string    `json:"proxyAddr,omitempty"`
+	SchemaID     *string   `json:"schemaId,omitempty"`
+	TrafficCount int       `json:"trafficCount"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
 // CapturedRequest holds proxy-captured GraphQL traffic.
 type CapturedRequest struct {
 	ID            string            `json:"id"`
@@ -225,6 +236,7 @@ type CapturedRequest struct {
 	Fingerprint   string            `json:"fingerprint,omitempty"`
 	ClusterID     *string           `json:"clusterId,omitempty"`
 	SchemaID      *string           `json:"schemaId,omitempty"`
+	ProjectID     *string           `json:"projectId,omitempty"`
 }
 
 // DepthResult contains query depth analysis output.

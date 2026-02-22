@@ -14,6 +14,7 @@ type Handlers struct {
 	SchemaRepo     *storage.SchemaRepo
 	TrafficRepo    *storage.TrafficRepo
 	AnalysisRepo   *storage.AnalysisRepo
+	ProjectRepo    *storage.ProjectRepo
 	tmpls          map[string]*template.Template
 	proxyCtrl      ProxyController
 	currentProject string // label for the active proxy session
@@ -27,14 +28,16 @@ type ProxyController interface {
 	Addr() string
 	Subscribe() <-chan []byte
 	Unsubscribe(<-chan []byte)
+	SetProjectID(string)
 }
 
 // NewHandlers creates a new Handlers instance.
-func NewHandlers(sr *storage.SchemaRepo, tr *storage.TrafficRepo, ar *storage.AnalysisRepo) *Handlers {
+func NewHandlers(sr *storage.SchemaRepo, tr *storage.TrafficRepo, ar *storage.AnalysisRepo, pr *storage.ProjectRepo) *Handlers {
 	return &Handlers{
 		SchemaRepo:   sr,
 		TrafficRepo:  tr,
 		AnalysisRepo: ar,
+		ProjectRepo:  pr,
 	}
 }
 

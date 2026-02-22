@@ -1,0 +1,152 @@
+{{define "content"}}
+<style>
+.traffic-scroll { max-height: 50vh; overflow-y: auto; }
+.traffic-scroll thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--bg-card); box-shadow: 0 1px 0 var(--border);
+}
+.status-ok  { color: var(--success); }
+.status-err { color: var(--danger); }
+</style>
+
+<!-- ── Page header ─────────────────────────────────────────────────────── -->
+<div class="page-header">
+    <div>
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <a href="/projects" style="color:var(--text-muted);text-decoration:none;font-size:.85rem">&larr; Projects</a>
+            <h1>{{.Project.Name}}</h1>
+            {{if .Project.ProxyAddr}}
+            <span style="font-size:.78rem;color:var(--text-muted);font-family:var(--font-mono)">{{.Project.ProxyAddr}}</span>
+            {{end}}
+        </div>
+        <div style="color:var(--text-muted);font-size:.8rem;margin-top:.25rem">
+            Created {{.Project.CreatedAt.Format "2006-01-02 15:04"}}
+            &middot; {{.Project.TrafficCount}} requests captured
+        </div>
+    </div>
+    <div class="page-actions">
+        {{if .Schema}}
+        <a href="/schema/{{.Schema.ID}}" class="btn btn-primary">View Inferred Schema</a>
+        <a href="/schema/{{.Schema.ID}}/graph" class="btn">Graph</a>
+        {{else}}
+        <button class="btn btn-primary" onclick="inferSchema('{{.Project.ID}}')">Build Schema from Traffic</button>
+        {{end}}
+    </div>
+</div>
+
+<!-- ── Schema info ─────────────────────────────────────────────────────── -->
+{{if .Schema}}
+<div class="card" style="margin-bottom:1rem">
+    <div class="card-header"><h2>Inferred Schema</h2></div>
+    <div class="card-body" style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center">
+        <div>
+            <span style="font-weight:600">{{.Schema.Name}}</span>
+            <span class="badge badge-reconstruction" style="margin-left:.5rem">reconstruction</span>
+        </div>
+        <div style="color:var(--text-muted);font-size:.85rem">
+            {{len .Schema.Types}} types
+        </div>
+        <div style="margin-left:auto;display:flex;gap:.5rem">
+            <a href="/schema/{{.Schema.ID}}" class="btn btn-sm">Explore</a>
+            <a href="/schema/{{.Schema.ID}}/graph" class="btn btn-sm">Graph</a>
+            <a href="/generator/{{.Schema.ID}}" class="btn btn-sm">Generator</a>
+        </div>
+    </div>
+</div>
+{{end}}
+
+<!-- ── Traffic table ───────────────────────────────────────────────────── -->
+<div class="card">
+    <div class="card-header">
+        <h2>Captured Traffic</h2>
+        <span class="badge">{{len .Traffic}} requests</span>
+    </div>
+    {{if .Traffic}}
+    <div class="traffic-scroll">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Method</th>
+                    <th>Host</th>
+                    <th>Operation</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Traffic}}
+                <tr>
+                    <td style="font-size:.78rem;color:var(--text-muted)">{{.Timestamp.Format "15:04:05"}}</td>
+                    <td>{{.Method}}</td>
+                    <td style="font-family:var(--font-mono);font-size:.78rem">{{.Host}}</td>
+                    <td>
+                        {{if .OperationName}}
+                        <span style="color:var(--accent);font-family:var(--font-mono);font-size:.78rem">{{.OperationName}}</span>
+                        {{else}}
+                        <span style="color:var(--text-muted);font-style:italic;font-size:.78rem">anonymous</span>
+                        {{end}}
+                    </td>
+                    <td>
+                        <span class="{{if lt .ResponseCode 400}}status-ok{{else}}status-err{{end}}"
+                              style="font-family:var(--font-mono);font-size:.78rem;font-weight:600">
+                            {{.ResponseCode}}
+                        </span>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <div class="empty-state">No traffic captured for this project yet.</div>
+    {{end}}
+</div>
+
+<!-- ── Build schema notice (no schema yet) ─────────────────────────────── -->
+{{if not .Schema}}
+<div class="card" style="margin-top:1rem">
+    <div class="card-header"><h2>Schema Inference</h2></div>
+    <div class="card-body">
+        <p style="color:var(--text-secondary);margin-bottom:1rem">
+            Build a synthetic GraphQL schema from the captured traffic. Operations and top-level fields
+            will be extracted from the request bodies to reconstruct Query/Mutation root types.
+        </p>
+        <button class="btn btn-primary" onclick="inferSchema('{{.Project.ID}}')">Build Schema from Traffic</button>
+        <div id="infer-result" class="parse-result" style="display:none;margin-top:.75rem"></div>
+    </div>
+</div>
+{{end}}
+
+<script>
+function inferSchema(projectId) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Building...';
+    const resultDiv = document.getElementById('infer-result');
+    if (resultDiv) resultDiv.style.display = 'none';
+
+    fetch('/api/projects/' + projectId + '/infer-schema', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.textContent = 'Build Schema from Traffic';
+            if (data.error) {
+                if (resultDiv) {
+                    resultDiv.style.display = 'block';
+                    resultDiv.className = 'parse-result error';
+                    resultDiv.textContent = data.error;
+                } else {
+                    alert(data.error);
+                }
+            } else {
+                window.location.href = data.redirectURL;
+            }
+        })
+        .catch(e => {
+            btn.disabled = false;
+            btn.textContent = 'Build Schema from Traffic';
+            alert(e.message);
+        });
+}
+</script>
+{{end}}

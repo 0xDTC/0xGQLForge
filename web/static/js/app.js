@@ -1,28 +1,19 @@
 // 0xGQLForge — Core application JavaScript
 
 document.addEventListener('DOMContentLoaded', function() {
-    loadSchemaNav();
     initThemeUI();
+    highlightNavLink();
 });
 
-function loadSchemaNav() {
-    fetch('/api/schemas')
-        .then(r => r.json())
-        .then(schemas => {
-            const nav = document.getElementById('schema-nav');
-            if (!nav || !schemas || schemas.length === 0) return;
-            nav.innerHTML = '';
-            schemas.forEach(s => {
-                const li = document.createElement('li');
-                const a = document.createElement('a');
-                a.href = '/schema/' + s.id;
-                a.className = 'nav-link';
-                a.textContent = s.name;
-                li.appendChild(a);
-                nav.appendChild(li);
-            });
-        })
-        .catch(() => {});
+// Highlight the active navbar link based on the current path.
+function highlightNavLink() {
+    const path = window.location.pathname;
+    document.querySelectorAll('.navbar-link').forEach(a => {
+        const href = a.getAttribute('href');
+        if (href && (path === href || (href !== '/' && path.startsWith(href)))) {
+            a.classList.add('navbar-link-active');
+        }
+    });
 }
 
 // ── Theme toggle ───────────────────────────────────────────────────────────

@@ -11,19 +11,17 @@
     <script src="/static/js/app.js" defer></script>
 </head>
 <body>
-    <nav class="sidebar">
-        <div class="logo">
+    <nav class="navbar">
+        <a href="/" class="navbar-brand">
             <span class="logo-icon">&#9670;</span>
             <span class="logo-text">0xGQLForge</span>
-        </div>
-        <ul class="nav-links">
-            <li><a href="/" class="nav-link">Dashboard</a></li>
-            <li><a href="/proxy" class="nav-link">Proxy</a></li>
+        </a>
+        <ul class="navbar-links">
+            <li><a href="/schemas" class="navbar-link">Schemas</a></li>
+            <li><a href="/projects" class="navbar-link">Projects</a></li>
+            <li><a href="/proxy" class="navbar-link">Proxy</a></li>
         </ul>
-        <div class="nav-section-title">Schemas</div>
-        <ul class="nav-links schema-list" id="schema-nav">
-        </ul>
-        <div class="theme-toggle-wrap">
+        <div class="navbar-end">
             <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">
                 <span class="theme-toggle-icon" id="theme-icon">☀</span>
                 <span id="theme-label">Light Mode</span>

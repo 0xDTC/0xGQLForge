@@ -124,12 +124,12 @@ func (r *TrafficRepo) Save(req *schema.CapturedRequest) error {
 	_, err := r.db.conn.Exec(
 		`INSERT INTO traffic (id, timestamp, method, url, host, headers_json,
 		  operation_name, query, variables_json, response_code, response_body,
-		  fingerprint, cluster_id, schema_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  fingerprint, cluster_id, schema_id, project_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		req.ID, req.Timestamp, req.Method, req.URL, req.Host, string(headers),
 		req.OperationName, req.Query, string(req.Variables),
 		req.ResponseCode, req.ResponseBody,
-		req.Fingerprint, req.ClusterID, req.SchemaID,
+		req.Fingerprint, req.ClusterID, req.SchemaID, req.ProjectID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert traffic: %w", err)
@@ -139,12 +139,23 @@ func (r *TrafficRepo) Save(req *schema.CapturedRequest) error {
 
 // List returns captured traffic, newest first. Limit 0 = no limit.
 func (r *TrafficRepo) List(limit int) ([]schema.CapturedRequest, error) {
-	q := "SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, fingerprint, cluster_id FROM traffic ORDER BY timestamp DESC"
+	q := "SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, fingerprint, cluster_id, project_id FROM traffic ORDER BY timestamp DESC"
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
+	return r.scanTraffic(r.db.conn.Query(q))
+}
 
-	rows, err := r.db.conn.Query(q)
+// ListByProject returns captured traffic for a project, newest first. Limit 0 = no limit.
+func (r *TrafficRepo) ListByProject(projectID string, limit int) ([]schema.CapturedRequest, error) {
+	q := "SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, fingerprint, cluster_id, project_id FROM traffic WHERE project_id = ? ORDER BY timestamp DESC"
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	return r.scanTraffic(r.db.conn.Query(q, projectID))
+}
+
+func (r *TrafficRepo) scanTraffic(rows *sql.Rows, err error) ([]schema.CapturedRequest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list traffic: %w", err)
 	}
@@ -154,21 +165,21 @@ func (r *TrafficRepo) List(limit int) ([]schema.CapturedRequest, error) {
 	for rows.Next() {
 		var req schema.CapturedRequest
 		var headersJSON, varsJSON sql.NullString
-		var clusterID, opName, query, fingerprint sql.NullString
+		var clusterID, opName, query, fingerprint, projectID sql.NullString
 		var respCode sql.NullInt64
 		var ts time.Time
 
 		if err := rows.Scan(
 			&req.ID, &ts, &req.Method, &req.URL, &req.Host,
 			&headersJSON, &opName, &query, &varsJSON, &respCode,
-			&fingerprint, &clusterID,
+			&fingerprint, &clusterID, &projectID,
 		); err != nil {
 			return nil, fmt.Errorf("scan traffic: %w", err)
 		}
 
 		req.Timestamp = ts
 		if headersJSON.Valid {
-			json.Unmarshal([]byte(headersJSON.String), &req.Headers)
+			json.Unmarshal([]byte(headersJSON.String), &req.Headers) //nolint:errcheck
 		}
 		if opName.Valid {
 			req.OperationName = opName.String
@@ -189,7 +200,10 @@ func (r *TrafficRepo) List(limit int) ([]schema.CapturedRequest, error) {
 			s := clusterID.String
 			req.ClusterID = &s
 		}
-
+		if projectID.Valid {
+			s := projectID.String
+			req.ProjectID = &s
+		}
 		reqs = append(reqs, req)
 	}
 	return reqs, rows.Err()

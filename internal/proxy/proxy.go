@@ -25,6 +25,7 @@ type Proxy struct {
 	trafficRepo *storage.TrafficRepo
 	listener    net.Listener
 	running     bool
+	projectID   string
 	mu          sync.Mutex
 	subs        map[chan []byte]struct{}
 	subsMu      sync.RWMutex
@@ -101,6 +102,13 @@ func (p *Proxy) Running() bool {
 // Addr returns the proxy's listen address.
 func (p *Proxy) Addr() string {
 	return p.addr
+}
+
+// SetProjectID tags subsequent captured traffic with the given project ID.
+func (p *Proxy) SetProjectID(id string) {
+	p.mu.Lock()
+	p.projectID = id
+	p.mu.Unlock()
 }
 
 // Subscribe returns a channel that receives SSE events for new traffic.
@@ -286,6 +294,10 @@ func (p *Proxy) captureTraffic(req *http.Request, payload *graphqlPayload, statu
 		headers[k] = req.Header.Get(k)
 	}
 
+	p.mu.Lock()
+	projID := p.projectID
+	p.mu.Unlock()
+
 	captured := &schema.CapturedRequest{
 		ID:            generateTrafficID(),
 		Timestamp:     time.Now().UTC(),
@@ -298,6 +310,9 @@ func (p *Proxy) captureTraffic(req *http.Request, payload *graphqlPayload, statu
 		Variables:     payload.Variables,
 		ResponseCode:  statusCode,
 		ResponseBody:  respBody,
+	}
+	if projID != "" {
+		captured.ProjectID = &projID
 	}
 
 	if err := p.trafficRepo.Save(captured); err != nil {

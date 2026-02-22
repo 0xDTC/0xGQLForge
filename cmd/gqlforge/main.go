@@ -47,9 +47,10 @@ func main() {
 	schemaRepo := storage.NewSchemaRepo(db)
 	trafficRepo := storage.NewTrafficRepo(db)
 	analysisRepo := storage.NewAnalysisRepo(db)
+	projectRepo := storage.NewProjectRepo(db)
 
 	// Handlers
-	handlers := handler.NewHandlers(schemaRepo, trafficRepo, analysisRepo)
+	handlers := handler.NewHandlers(schemaRepo, trafficRepo, analysisRepo, projectRepo)
 
 	// Certificate manager
 	certMgr, err := proxy.NewCertManager(configDir)

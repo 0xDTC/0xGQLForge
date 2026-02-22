@@ -16,11 +16,14 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	}
 
 	// Pages
-	mux.HandleFunc("GET /{$}", h.Dashboard)
+	mux.HandleFunc("GET /{$}", h.SchemasList)
+	mux.HandleFunc("GET /schemas", h.SchemasList)
 	mux.HandleFunc("GET /schema/{id}", h.SchemaView)
 	mux.HandleFunc("GET /schema/{id}/graph", h.SchemaGraph)
 	mux.HandleFunc("GET /generator/{id}", h.GeneratorView)
 	mux.HandleFunc("GET /proxy", h.ProxyView)
+	mux.HandleFunc("GET /projects", h.ProjectsList)
+	mux.HandleFunc("GET /projects/{id}", h.ProjectDetail)
 	mux.HandleFunc("GET /analysis/{id}", h.AnalysisView)
 
 	// API — Introspection
@@ -43,6 +46,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/proxy/status", h.ProxyStatus)
 	mux.HandleFunc("DELETE /api/proxy/traffic", h.ProxyClearTraffic)
 	mux.HandleFunc("GET /api/proxy/sse", h.ProxySSE)
+
+	// API — Projects
+	mux.HandleFunc("POST /api/projects/{id}/infer-schema", h.ProjectInferSchema)
 
 	// API — Analysis
 	mux.HandleFunc("POST /api/analysis/run", h.RunAnalysis)
