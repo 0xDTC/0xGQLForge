@@ -1,12 +1,59 @@
 package handler
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/0xDTC/0xGQLForge/internal/inference"
 	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
+
+// ProjectListAPI returns all projects as JSON (used by the proxy page dropdown).
+func (h *Handlers) ProjectListAPI(w http.ResponseWriter, r *http.Request) {
+	projects, err := h.ProjectRepo.List()
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if projects == nil {
+		projects = []schema.Project{}
+	}
+	jsonResp(w, http.StatusOK, projects)
+}
+
+// ProjectCreate creates a new project via JSON API.
+func (h *Handlers) ProjectCreate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+		jsonErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	proj := &schema.Project{
+		ID:        generateProjectID(),
+		Name:      body.Name,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	if err := h.ProjectRepo.Create(proj); err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResp(w, http.StatusCreated, proj)
+}
+
+// ProjectDelete removes a project by ID.
+func (h *Handlers) ProjectDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.ProjectRepo.Delete(id); err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResp(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
 
 // ProjectsList renders the projects overview page.
 func (h *Handlers) ProjectsList(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +100,7 @@ func (h *Handlers) ProjectInferSchema(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	traffic, err := h.TrafficRepo.ListByProject(id, 0)
+	traffic, err := h.TrafficRepo.ListByProjectFull(id, 0)
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return

@@ -48,7 +48,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/proxy/sse", h.ProxySSE)
 
 	// API — Projects
+	mux.HandleFunc("GET /api/projects", h.ProjectListAPI)
+	mux.HandleFunc("POST /api/projects", h.ProjectCreate)
+	mux.HandleFunc("DELETE /api/projects/{id}", h.ProjectDelete)
 	mux.HandleFunc("POST /api/projects/{id}/infer-schema", h.ProjectInferSchema)
+	mux.HandleFunc("POST /api/proxy/project", h.ProxySetProject)
 
 	// API — Analysis
 	mux.HandleFunc("POST /api/analysis/run", h.RunAnalysis)

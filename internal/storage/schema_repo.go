@@ -155,6 +155,72 @@ func (r *TrafficRepo) ListByProject(projectID string, limit int) ([]schema.Captu
 	return r.scanTraffic(r.db.conn.Query(q, projectID))
 }
 
+// ListByProjectFull is like ListByProject but also loads response_body.
+// Used by schema inference so it can analyse response payloads.
+func (r *TrafficRepo) ListByProjectFull(projectID string, limit int) ([]schema.CapturedRequest, error) {
+	q := "SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, response_body, fingerprint, cluster_id, project_id FROM traffic WHERE project_id = ? ORDER BY timestamp DESC"
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	rows, err := r.db.conn.Query(q, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list traffic full: %w", err)
+	}
+	defer rows.Close()
+
+	var reqs []schema.CapturedRequest
+	for rows.Next() {
+		var req schema.CapturedRequest
+		var headersJSON, varsJSON sql.NullString
+		var clusterID, opName, query, fingerprint, projectIDval sql.NullString
+		var respCode sql.NullInt64
+		var responseBody []byte
+		var ts time.Time
+
+		if err := rows.Scan(
+			&req.ID, &ts, &req.Method, &req.URL, &req.Host,
+			&headersJSON, &opName, &query, &varsJSON, &respCode,
+			&responseBody,
+			&fingerprint, &clusterID, &projectIDval,
+		); err != nil {
+			return nil, fmt.Errorf("scan traffic full: %w", err)
+		}
+
+		req.Timestamp = ts
+		if headersJSON.Valid {
+			json.Unmarshal([]byte(headersJSON.String), &req.Headers) //nolint:errcheck
+		}
+		if opName.Valid {
+			req.OperationName = opName.String
+		}
+		if query.Valid {
+			req.Query = query.String
+		}
+		if varsJSON.Valid {
+			req.Variables = json.RawMessage(varsJSON.String)
+		}
+		if respCode.Valid {
+			req.ResponseCode = int(respCode.Int64)
+		}
+		if len(responseBody) > 0 {
+			req.ResponseBody = json.RawMessage(responseBody)
+		}
+		if fingerprint.Valid {
+			req.Fingerprint = fingerprint.String
+		}
+		if clusterID.Valid {
+			s := clusterID.String
+			req.ClusterID = &s
+		}
+		if projectIDval.Valid {
+			s := projectIDval.String
+			req.ProjectID = &s
+		}
+		reqs = append(reqs, req)
+	}
+	return reqs, rows.Err()
+}
+
 func (r *TrafficRepo) scanTraffic(rows *sql.Rows, err error) ([]schema.CapturedRequest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list traffic: %w", err)

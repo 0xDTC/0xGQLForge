@@ -2,29 +2,40 @@
 package inference
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/0xDTC/0xGQLForge/internal/parser"
 	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
-var (
-	// matches: query/mutation/subscription OptionalName
-	opDeclRe = regexp.MustCompile(`(?i)^\s*(query|mutation|subscription)\b\s*(\w+)?`)
-	// matches variable declarations: $name: Type
-	varDeclRe = regexp.MustCompile(`\$(\w+)\s*:\s*([\w!\[\] ]+)`)
-	// matches top-level field lines (indented 2–4 spaces or 1 tab inside an op)
-	topFieldRe = regexp.MustCompile(`(?m)^(?:  |\t)([a-zA-Z_]\w*)\s*[\({]`)
-)
+var opDeclRe = regexp.MustCompile(`(?i)^\s*(query|mutation|subscription)\b`)
 
-// BuildFromTraffic synthesises a Schema from a set of captured requests.
-// It extracts operation names, types, and top-level fields to reconstruct
-// Query/Mutation/Subscription root types.
+// BuildFromTraffic synthesises a Schema from captured proxy traffic.
+//
+// Strategy (best-data-first):
+//  1. If any response body is a GraphQL introspection response, parse it
+//     directly — this gives a complete, accurate schema.
+//  2. Otherwise walk every response body's "data" object to infer object
+//     types from the actual JSON shape, producing real graph edges.
+//  3. Fall back to operation-name-only entries for requests with no
+//     parseable response.
 func BuildFromTraffic(reqs []schema.CapturedRequest, projectName string) *schema.Schema {
+	// Phase 1 — introspection auto-detection.
+	for _, req := range reqs {
+		if s := tryParseIntrospection(req.ResponseBody, projectName); s != nil {
+			return s
+		}
+	}
+
+	// Phase 2 — response-body type inference.
+	typeMap := map[string]schema.Type{}
 	queryFields := map[string]schema.Field{}
 	mutFields := map[string]schema.Field{}
 	subFields := map[string]schema.Field{}
@@ -33,45 +44,36 @@ func BuildFromTraffic(reqs []schema.CapturedRequest, projectName string) *schema
 		if req.Query == "" {
 			continue
 		}
-		opKind, fields := parseQuery(req.Query)
+		opKind := parseOpKind(req.Query)
+		bucket := queryFields
+		if opKind == "mutation" {
+			bucket = mutFields
+		} else if opKind == "subscription" {
+			bucket = subFields
+		}
 
-		// If we already know the operation name from the captured request, add it.
-		if req.OperationName != "" {
-			f := schema.Field{
-				Name: req.OperationName,
-				Type: unknownRef(),
-			}
-			switch opKind {
-			case "mutation":
-				if _, ok := mutFields[f.Name]; !ok {
-					mutFields[f.Name] = f
-				}
-			case "subscription":
-				if _, ok := subFields[f.Name]; !ok {
-					subFields[f.Name] = f
-				}
-			default:
-				if _, ok := queryFields[f.Name]; !ok {
-					queryFields[f.Name] = f
-				}
+		// Try to extract real types from the response body.
+		rootFields, newTypes := inferFromResponse(req.ResponseBody)
+
+		for name, t := range newTypes {
+			if existing, ok := typeMap[name]; ok {
+				typeMap[name] = mergeType(existing, t)
+			} else {
+				typeMap[name] = t
 			}
 		}
 
-		// Add top-level fields extracted from the query body.
-		for _, f := range fields {
-			switch opKind {
-			case "mutation":
-				if _, ok := mutFields[f.Name]; !ok {
-					mutFields[f.Name] = f
-				}
-			case "subscription":
-				if _, ok := subFields[f.Name]; !ok {
-					subFields[f.Name] = f
-				}
-			default:
-				if _, ok := queryFields[f.Name]; !ok {
-					queryFields[f.Name] = f
-				}
+		for _, f := range rootFields {
+			if _, ok := bucket[f.Name]; !ok {
+				bucket[f.Name] = f
+			}
+		}
+
+		// Fallback: if we got nothing from the response, at least record
+		// the operation name so it appears in the schema.
+		if len(rootFields) == 0 && req.OperationName != "" {
+			if _, ok := bucket[req.OperationName]; !ok {
+				bucket[req.OperationName] = schema.Field{Name: req.OperationName, Type: unknownRef()}
 			}
 		}
 	}
@@ -84,20 +86,25 @@ func BuildFromTraffic(reqs []schema.CapturedRequest, projectName string) *schema
 		CreatedAt: time.Now().UTC(),
 	}
 
-	// Build Query root type.
+	// Emit all inferred object types first (so graph edges can reference them).
+	for _, t := range typeMap {
+		s.Types = append(s.Types, t)
+	}
+
+	// Query root.
 	qt := schema.Type{Name: "Query", Kind: schema.KindObject}
 	for _, f := range queryFields {
 		qt.Fields = append(qt.Fields, f)
 	}
 	if len(qt.Fields) == 0 {
 		qt.Fields = append(qt.Fields, schema.Field{
-			Name: "_placeholder", Type: unknownRef(),
+			Name:        "_placeholder",
+			Type:        unknownRef(),
 			Description: "No query operations captured yet",
 		})
 	}
 	s.Types = append(s.Types, qt)
 
-	// Build Mutation root type only if mutations were seen.
 	if len(mutFields) > 0 {
 		mt := schema.Type{Name: "Mutation", Kind: schema.KindObject}
 		for _, f := range mutFields {
@@ -107,7 +114,6 @@ func BuildFromTraffic(reqs []schema.CapturedRequest, projectName string) *schema
 		s.MutationType = "Mutation"
 	}
 
-	// Build Subscription root type only if subscriptions were seen.
 	if len(subFields) > 0 {
 		st := schema.Type{Name: "Subscription", Kind: schema.KindObject}
 		for _, f := range subFields {
@@ -120,41 +126,178 @@ func BuildFromTraffic(reqs []schema.CapturedRequest, projectName string) *schema
 	return s
 }
 
-// parseQuery extracts the operation kind and top-level field names from a raw GraphQL query.
-func parseQuery(query string) (kind string, fields []schema.Field) {
-	kind = "query"
+// tryParseIntrospection attempts to parse body as a GraphQL introspection
+// response. Returns nil if body is empty or not an introspection response.
+func tryParseIntrospection(body json.RawMessage, projectName string) *schema.Schema {
+	if len(body) == 0 || !bytes.Contains(body, []byte("__schema")) {
+		return nil
+	}
+	s, err := parser.ParseIntrospection(body, generateID(), projectName+" (inferred)")
+	if err != nil || s == nil || len(s.Types) == 0 {
+		return nil
+	}
+	s.CreatedAt = time.Now().UTC()
+	return s
+}
 
-	// Find the operation declaration on any line.
+// inferFromResponse parses a GraphQL response `{"data":{...}}` and returns
+// the top-level fields (for the root type) plus any object types discovered
+// while walking the JSON tree.
+func inferFromResponse(body json.RawMessage) (rootFields []schema.Field, types map[string]schema.Type) {
+	types = map[string]schema.Type{}
+	if len(body) == 0 {
+		return
+	}
+
+	var resp struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || len(resp.Data) == 0 || string(resp.Data) == "null" {
+		return
+	}
+
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		return
+	}
+
+	for fieldName, value := range data {
+		typeRef := inferTypeRef(fieldName, value, types)
+		rootFields = append(rootFields, schema.Field{
+			Name: fieldName,
+			Type: typeRef,
+		})
+	}
+	return
+}
+
+// inferTypeRef recursively inspects a JSON value and returns the matching
+// TypeRef, creating new object-type entries in `types` as it goes.
+func inferTypeRef(fieldName string, value json.RawMessage, types map[string]schema.Type) schema.TypeRef {
+	if len(value) == 0 || string(value) == "null" {
+		return unknownRef()
+	}
+
+	switch value[0] {
+	case '"':
+		if isIDField(fieldName) {
+			return scalarRef("ID")
+		}
+		return scalarRef("String")
+
+	case 't', 'f': // true / false
+		return scalarRef("Boolean")
+
+	case '[':
+		var arr []json.RawMessage
+		if err := json.Unmarshal(value, &arr); err != nil || len(arr) == 0 {
+			return listRef(unknownRef())
+		}
+		// Use the first non-null element to determine the element type.
+		for _, elem := range arr {
+			if string(elem) != "null" {
+				return listRef(inferTypeRef(singularize(fieldName), elem, types))
+			}
+		}
+		return listRef(unknownRef())
+
+	case '{':
+		typeName := pascalCase(fieldName)
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(value, &obj); err != nil {
+			return objectRef(typeName)
+		}
+		t := schema.Type{Name: typeName, Kind: schema.KindObject}
+		for subField, subValue := range obj {
+			subRef := inferTypeRef(subField, subValue, types)
+			t.Fields = append(t.Fields, schema.Field{Name: subField, Type: subRef})
+		}
+		if existing, ok := types[typeName]; ok {
+			types[typeName] = mergeType(existing, t)
+		} else {
+			types[typeName] = t
+		}
+		return objectRef(typeName)
+
+	default: // number
+		s := string(value)
+		if strings.ContainsAny(s, ".eE") {
+			return scalarRef("Float")
+		}
+		return scalarRef("Int")
+	}
+}
+
+// mergeType combines fields from two definitions of the same type, keeping
+// all unique field names seen across both.
+func mergeType(a, b schema.Type) schema.Type {
+	fieldMap := map[string]schema.Field{}
+	for _, f := range a.Fields {
+		fieldMap[f.Name] = f
+	}
+	for _, f := range b.Fields {
+		if _, exists := fieldMap[f.Name]; !exists {
+			fieldMap[f.Name] = f
+		}
+	}
+	merged := a
+	merged.Fields = nil
+	for _, f := range fieldMap {
+		merged.Fields = append(merged.Fields, f)
+	}
+	return merged
+}
+
+// parseOpKind returns "query", "mutation", or "subscription".
+func parseOpKind(query string) string {
 	for _, line := range strings.Split(query, "\n") {
 		m := opDeclRe.FindStringSubmatch(strings.TrimSpace(line))
 		if m != nil {
-			kind = strings.ToLower(m[1])
-			break
+			return strings.ToLower(m[1])
 		}
 	}
+	return "query"
+}
 
-	// Collect variable type hints ($varName: TypeName).
-	varTypes := map[string]string{}
-	for _, m := range varDeclRe.FindAllStringSubmatch(query, -1) {
-		varTypes[m[1]] = strings.TrimSpace(m[2])
-	}
+func isIDField(name string) bool {
+	lower := strings.ToLower(name)
+	return lower == "id" || strings.HasSuffix(lower, "id") || strings.HasSuffix(lower, "_id")
+}
 
-	// Extract top-level selection fields (indented exactly 2–4 spaces or 1 tab).
-	skipWords := map[string]bool{
-		"query": true, "mutation": true, "subscription": true,
-		"fragment": true, "on": true, "true": true, "false": true,
+// pascalCase capitalises the first letter: "userProfile" → "UserProfile".
+func pascalCase(s string) string {
+	if s == "" {
+		return "Unknown"
 	}
-	seen := map[string]bool{}
-	for _, m := range topFieldRe.FindAllStringSubmatch(query, -1) {
-		name := m[1]
-		if skipWords[name] || seen[name] {
-			continue
-		}
-		seen[name] = true
-		fields = append(fields, schema.Field{Name: name, Type: unknownRef()})
-	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
 
-	return kind, fields
+// singularize strips a trailing 's' for common plurals used in list fields.
+// "users" → "User", "categories" → "Category", "posts" → "Post".
+func singularize(s string) string {
+	switch {
+	case strings.HasSuffix(s, "ies") && len(s) > 4:
+		return s[:len(s)-3] + "y"
+	case strings.HasSuffix(s, "ses") && len(s) > 4:
+		return s[:len(s)-2]
+	case strings.HasSuffix(s, "s") && len(s) > 3:
+		return s[:len(s)-1]
+	}
+	return s
+}
+
+func scalarRef(name string) schema.TypeRef {
+	n := name
+	return schema.TypeRef{Kind: schema.KindScalar, Name: &n}
+}
+
+func objectRef(name string) schema.TypeRef {
+	n := name
+	return schema.TypeRef{Kind: schema.KindObject, Name: &n}
+}
+
+func listRef(of schema.TypeRef) schema.TypeRef {
+	return schema.TypeRef{Kind: schema.KindList, OfType: &of}
 }
 
 func unknownRef() schema.TypeRef {

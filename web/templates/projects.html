@@ -1,11 +1,34 @@
 {{define "content"}}
-<div class="page-header">
-    <h1>Proxy Projects</h1>
-    <div class="page-actions">
-        <a href="/proxy" class="btn btn-primary">Go to Proxy</a>
+
+<!-- ── Create project modal ──────────────────────────────────────────────── -->
+<div id="create-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);
+     display:none;align-items:center;justify-content:center;z-index:1000"
+     onclick="if(event.target===this)closeCreateModal()">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;
+                padding:2rem;width:420px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.45)">
+        <h2 style="margin:0 0 1.25rem;font-size:1.1rem">New Project</h2>
+        <div style="margin-bottom:.85rem">
+            <label class="label" style="display:block;margin-bottom:.4rem">Project Name</label>
+            <input class="input" id="new-proj-name" type="text"
+                   placeholder="e.g. walmart-gql-recon" style="width:100%">
+        </div>
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.25rem">
+            <button class="btn" onclick="closeCreateModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="createProject()">Create</button>
+        </div>
     </div>
 </div>
 
+<!-- ── Page header ─────────────────────────────────────────────────────── -->
+<div class="page-header">
+    <h1>Proxy Projects</h1>
+    <div class="page-actions">
+        <button class="btn btn-primary" onclick="openCreateModal()">+ New Project</button>
+        <a href="/proxy" class="btn">Go to Proxy</a>
+    </div>
+</div>
+
+<div id="projects-list">
 {{if .Projects}}
 <div class="card">
     <div class="card-header">
@@ -25,7 +48,7 @@
             </thead>
             <tbody>
                 {{range .Projects}}
-                <tr>
+                <tr id="proj-row-{{.ID}}">
                     <td>
                         <a href="/projects/{{.ID}}" style="color:var(--accent);text-decoration:none;font-weight:500">
                             {{.Name}}
@@ -34,9 +57,7 @@
                     <td style="font-family:var(--font-mono);font-size:.8rem;color:var(--text-muted)">
                         {{if .ProxyAddr}}{{.ProxyAddr}}{{else}}&mdash;{{end}}
                     </td>
-                    <td>
-                        <span class="badge">{{.TrafficCount}}</span>
-                    </td>
+                    <td><span class="badge">{{.TrafficCount}}</span></td>
                     <td>
                         {{if .SchemaID}}
                         <a href="/schema/{{.SchemaID}}" class="btn btn-sm">View Schema</a>
@@ -45,8 +66,9 @@
                         {{end}}
                     </td>
                     <td style="color:var(--text-muted);font-size:.8rem">{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
-                    <td>
+                    <td style="display:flex;gap:.4rem">
                         <a href="/projects/{{.ID}}" class="btn btn-sm">Detail</a>
+                        <button class="btn btn-sm btn-danger" onclick="deleteProject('{{.ID}}', '{{.Name}}')">Delete</button>
                     </td>
                 </tr>
                 {{end}}
@@ -55,9 +77,58 @@
     </div>
 </div>
 {{else}}
-<div class="empty-state">
-    <p>No proxy projects yet. Start a proxy session and name it to create a project.</p>
-    <a href="/proxy" class="btn btn-primary" style="margin-top:1rem">Go to Proxy &rarr;</a>
+<div class="empty-state" id="empty-state">
+    <p>No proxy projects yet. Create one or start capturing traffic.</p>
+    <div style="display:flex;gap:.75rem;justify-content:center;margin-top:1rem">
+        <button class="btn btn-primary" onclick="openCreateModal()">+ New Project</button>
+        <a href="/proxy" class="btn">Go to Proxy &rarr;</a>
+    </div>
 </div>
 {{end}}
+</div>
+
+<script>
+function openCreateModal() {
+    const m = document.getElementById('create-modal');
+    m.style.display = 'flex';
+    setTimeout(() => document.getElementById('new-proj-name').focus(), 60);
+}
+function closeCreateModal() {
+    document.getElementById('create-modal').style.display = 'none';
+    document.getElementById('new-proj-name').value = '';
+}
+document.getElementById('new-proj-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter')  createProject();
+    if (e.key === 'Escape') closeCreateModal();
+});
+
+function createProject() {
+    const name = document.getElementById('new-proj-name').value.trim();
+    if (!name) { document.getElementById('new-proj-name').focus(); return; }
+    fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) { alert(d.error); return; }
+        closeCreateModal();
+        window.location.href = '/projects/' + d.id;
+    })
+    .catch(e => alert(e.message));
+}
+
+function deleteProject(id, name) {
+    if (!confirm('Delete project "' + name + '"? This cannot be undone.')) return;
+    fetch('/api/projects/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) { alert(d.error); return; }
+            const row = document.getElementById('proj-row-' + id);
+            if (row) row.remove();
+        })
+        .catch(e => alert(e.message));
+}
+</script>
 {{end}}

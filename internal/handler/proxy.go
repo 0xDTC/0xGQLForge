@@ -8,24 +8,12 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-
-	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // ProxyView renders the proxy traffic viewer page.
 func (h *Handlers) ProxyView(w http.ResponseWriter, r *http.Request) {
-	proxyRunning := false
-	proxyAddr := ""
-	if h.proxyCtrl != nil {
-		proxyRunning = h.proxyCtrl.Running()
-		proxyAddr = h.proxyCtrl.Addr()
-	}
-
 	data := map[string]any{
-		"Title":          "Proxy",
-		"ProxyRunning":   proxyRunning,
-		"ProxyAddr":      proxyAddr,
-		"CurrentProject": h.currentProject,
+		"Title": "Proxy",
 	}
 	h.render(w, "proxy.html", data)
 }
@@ -38,7 +26,6 @@ func (h *Handlers) ProxyTraffic(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-
 	traffic, err := h.TrafficRepo.List(limit)
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
@@ -53,50 +40,14 @@ func (h *Handlers) ProxyStart(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusServiceUnavailable, "proxy not configured")
 		return
 	}
-
-	var body struct {
-		ProjectName string `json:"projectName"`
-	}
-	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
-	if body.ProjectName == "" {
-		body.ProjectName = "Session"
-	}
-	h.currentProject = body.ProjectName
-
 	if err := h.proxyCtrl.Start(); err != nil {
 		jsonErr(w, http.StatusInternalServerError, "start proxy: "+err.Error())
 		return
 	}
-
-	// Persist the project and tag subsequent traffic with its ID.
-	if h.ProjectRepo != nil {
-		proj := &schema.Project{
-			ID:        generateProjectID(),
-			Name:      body.ProjectName,
-			ProxyAddr: h.proxyCtrl.Addr(),
-			CreatedAt: time.Now().UTC(),
-			UpdatedAt: time.Now().UTC(),
-		}
-		if err := h.ProjectRepo.Create(proj); err != nil {
-			fmt.Printf("create project: %v\n", err)
-		} else {
-			h.proxyCtrl.SetProjectID(proj.ID)
-		}
-	}
-
 	jsonResp(w, http.StatusOK, map[string]any{
-		"status":      "running",
-		"addr":        h.proxyCtrl.Addr(),
-		"projectName": h.currentProject,
+		"status": "running",
+		"addr":   h.proxyCtrl.Addr(),
 	})
-}
-
-func generateProjectID() string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("proj_%d", time.Now().UnixNano())
-	}
-	return "proj_" + hex.EncodeToString(b)
 }
 
 // ProxyStop stops the MITM proxy.
@@ -109,7 +60,6 @@ func (h *Handlers) ProxyStop(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, "stop proxy: "+err.Error())
 		return
 	}
-	h.currentProject = ""
 	h.proxyCtrl.SetProjectID("")
 	jsonResp(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
@@ -137,10 +87,35 @@ func (h *Handlers) ProxyClearTraffic(w http.ResponseWriter, r *http.Request) {
 	jsonResp(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
+// ProxySetProject links the running proxy to a project so that captured
+// traffic is tagged with the given project ID.
+func (h *Handlers) ProxySetProject(w http.ResponseWriter, r *http.Request) {
+	if h.proxyCtrl == nil {
+		jsonErr(w, http.StatusServiceUnavailable, "proxy not configured")
+		return
+	}
+	var body struct {
+		ProjectID string `json:"projectId"`
+	}
+	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+	h.proxyCtrl.SetProjectID(body.ProjectID)
+	jsonResp(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // ProxySSE streams new traffic events via Server-Sent Events.
 func (h *Handlers) ProxySSE(w http.ResponseWriter, r *http.Request) {
 	if h.proxyCtrl == nil {
-		http.Error(w, "proxy not configured", http.StatusServiceUnavailable)
+		// Tell EventSource to retry in 5 s rather than hammering us
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		fmt.Fprintf(w, "retry: 5000\n\n")
+		return
+	}
+
+	if !h.proxyCtrl.Running() {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		fmt.Fprintf(w, "retry: 5000\n\n")
 		return
 	}
 
@@ -169,4 +144,12 @@ func (h *Handlers) ProxySSE(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func generateProjectID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("proj_%d", time.Now().UnixNano())
+	}
+	return "proj_" + hex.EncodeToString(b)
 }

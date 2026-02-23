@@ -352,6 +352,26 @@ body {
     letter-spacing: 0.05em;
 }
 
+/* Inline column filter controls inside <th> */
+.th-filter, .th-filter-input {
+    display: block;
+    width: 100%;
+    margin-top: 0.3rem;
+    padding: 0.18rem 0.3rem;
+    font-size: 0.68rem;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text-primary);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    outline: none;
+    box-sizing: border-box;
+}
+.th-filter { cursor: pointer; }
+.th-filter:focus, .th-filter-input:focus { border-color: var(--accent); }
+
 .table tr:hover {
     background: var(--bg-hover);
 }

@@ -32,11 +32,14 @@ func (r *ProjectRepo) Create(p *schema.Project) error {
 }
 
 // List returns all projects ordered by creation time (newest first).
+// Traffic counts are computed live via a subquery.
 func (r *ProjectRepo) List() ([]schema.Project, error) {
-	rows, err := r.db.conn.Query(
-		`SELECT id, name, proxy_addr, schema_id, traffic_count, created_at, updated_at
-		 FROM projects ORDER BY created_at DESC`,
-	)
+	rows, err := r.db.conn.Query(`
+		SELECT p.id, p.name, p.proxy_addr, p.schema_id,
+		       (SELECT COUNT(*) FROM traffic WHERE project_id = p.id) AS traffic_count,
+		       p.created_at, p.updated_at
+		FROM projects p
+		ORDER BY p.created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
@@ -61,13 +64,16 @@ func (r *ProjectRepo) List() ([]schema.Project, error) {
 	return projects, rows.Err()
 }
 
-// Get retrieves a project by ID.
+// Get retrieves a project by ID with live traffic count.
 func (r *ProjectRepo) Get(id string) (*schema.Project, error) {
 	var p schema.Project
 	var proxyAddr, schemaID sql.NullString
-	err := r.db.conn.QueryRow(
-		`SELECT id, name, proxy_addr, schema_id, traffic_count, created_at, updated_at
-		 FROM projects WHERE id = ?`, id,
+	err := r.db.conn.QueryRow(`
+		SELECT p.id, p.name, p.proxy_addr, p.schema_id,
+		       (SELECT COUNT(*) FROM traffic WHERE project_id = p.id) AS traffic_count,
+		       p.created_at, p.updated_at
+		FROM projects p
+		WHERE p.id = ?`, id,
 	).Scan(&p.ID, &p.Name, &proxyAddr, &schemaID, &p.TrafficCount, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -85,20 +91,17 @@ func (r *ProjectRepo) Get(id string) (*schema.Project, error) {
 	return &p, nil
 }
 
+// Delete removes a project by ID.
+func (r *ProjectRepo) Delete(id string) error {
+	_, err := r.db.conn.Exec("DELETE FROM projects WHERE id = ?", id)
+	return err
+}
+
 // UpdateSchema sets the inferred schema ID for a project.
 func (r *ProjectRepo) UpdateSchema(projectID, schemaID string) error {
 	_, err := r.db.conn.Exec(
 		"UPDATE projects SET schema_id = ?, updated_at = ? WHERE id = ?",
 		schemaID, time.Now().UTC(), projectID,
-	)
-	return err
-}
-
-// IncrementTrafficCount increments traffic_count and bumps updated_at.
-func (r *ProjectRepo) IncrementTrafficCount(id string) error {
-	_, err := r.db.conn.Exec(
-		"UPDATE projects SET traffic_count = traffic_count + 1, updated_at = ? WHERE id = ?",
-		time.Now().UTC(), id,
 	)
 	return err
 }
