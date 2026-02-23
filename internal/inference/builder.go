@@ -45,11 +45,14 @@ func BuildFromTraffic(reqs []schema.CapturedRequest, projectName string) *schema
 			continue
 		}
 		opKind := parseOpKind(req.Query)
-		bucket := queryFields
-		if opKind == "mutation" {
+		var bucket map[string]schema.Field
+		switch opKind {
+		case "mutation":
 			bucket = mutFields
-		} else if opKind == "subscription" {
+		case "subscription":
 			bucket = subFields
+		default:
+			bucket = queryFields
 		}
 
 		// Try to extract real types from the response body.
