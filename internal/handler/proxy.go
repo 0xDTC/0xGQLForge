@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
 
 // ProxyView renders the proxy traffic viewer page.
@@ -19,6 +21,7 @@ func (h *Handlers) ProxyView(w http.ResponseWriter, r *http.Request) {
 }
 
 // ProxyTraffic returns captured traffic as JSON.
+// Accepts ?limit=N and ?project=ID query parameters.
 func (h *Handlers) ProxyTraffic(w http.ResponseWriter, r *http.Request) {
 	limit := 100
 	if l := r.URL.Query().Get("limit"); l != "" {
@@ -26,7 +29,15 @@ func (h *Handlers) ProxyTraffic(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-	traffic, err := h.TrafficRepo.List(limit)
+
+	projectID := r.URL.Query().Get("project")
+	var traffic []schema.CapturedRequest
+	var err error
+	if projectID != "" {
+		traffic, err = h.TrafficRepo.ListByProject(projectID, limit)
+	} else {
+		traffic, err = h.TrafficRepo.List(limit)
+	}
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return

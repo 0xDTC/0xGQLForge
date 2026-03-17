@@ -309,34 +309,34 @@ async function init() {
     buildOptions();
     renderTable();
 
-    // Load projects, then restore the active project selection from proxy status.
-    await loadProjects();
-    if (proxyProjectId) {
-        const sel = document.getElementById('project-select');
-        sel.value = proxyProjectId;
-        const name = sel.options[sel.selectedIndex]
-            ? sel.options[sel.selectedIndex].text : '';
-        const lbl = document.getElementById('proxy-project-label');
-        if (name && name !== '\u2014 None \u2014') {
-            lbl.textContent = name;
-            lbl.style.display = '';
-        }
-    }
-
-    // Check URL params — if coming from a project page with ?project=ID
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlProject = urlParams.get('project');
-    if (urlProject && !proxyProjectId) {
-        const sel = document.getElementById('project-select');
-        sel.value = urlProject;
-        if (sel.value === urlProject) {
-            // Auto-apply the project
-            applyProject();
-        }
-    }
-
-    // NOW connect SSE — any new events will be deduplicated and prepended.
+    // Connect SSE immediately after traffic is loaded — don't wait for projects.
     if (proxyRunning) connectSSE();
+
+    // Load projects in background, then restore the active project selection.
+    loadProjects().then(() => {
+        if (proxyProjectId) {
+            const sel = document.getElementById('project-select');
+            sel.value = proxyProjectId;
+            const name = sel.options[sel.selectedIndex]
+                ? sel.options[sel.selectedIndex].text : '';
+            const lbl = document.getElementById('proxy-project-label');
+            if (name && name !== '\u2014 None \u2014') {
+                lbl.textContent = name;
+                lbl.style.display = '';
+            }
+        }
+
+        // Check URL params — if coming from a project page with ?project=ID
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlProject = urlParams.get('project');
+        if (urlProject && !proxyProjectId) {
+            const sel = document.getElementById('project-select');
+            sel.value = urlProject;
+            if (sel.value === urlProject) {
+                applyProject();
+            }
+        }
+    });
 }
 init();
 

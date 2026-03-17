@@ -78,13 +78,12 @@
     </div>
 </div>
 
-<!-- ── Traffic table ───────────────────────────────────────────────────── -->
+<!-- ── Traffic table (live-updating) ────────────────────────────────────── -->
 <div class="card">
     <div class="card-header">
         <h2>Captured Traffic</h2>
         <span id="traffic-badge" class="badge">{{len .Traffic}} requests</span>
     </div>
-    {{if .Traffic}}
     <div class="traffic-scroll">
         <table class="table">
             <thead>
@@ -96,33 +95,9 @@
                     <th>Status</th>
                 </tr>
             </thead>
-            <tbody>
-                {{range .Traffic}}
-                <tr>
-                    <td style="font-size:.78rem;color:var(--text-muted)">{{.Timestamp.Format "15:04:05"}}</td>
-                    <td>{{.Method}}</td>
-                    <td style="font-family:var(--font-mono);font-size:.78rem">{{.Host}}</td>
-                    <td>
-                        {{if .OperationName}}
-                        <span style="color:var(--accent);font-family:var(--font-mono);font-size:.78rem">{{.OperationName}}</span>
-                        {{else}}
-                        <span style="color:var(--text-muted);font-style:italic;font-size:.78rem">anonymous</span>
-                        {{end}}
-                    </td>
-                    <td>
-                        <span class="{{if lt .ResponseCode 400}}status-ok{{else}}status-err{{end}}"
-                              style="font-family:var(--font-mono);font-size:.78rem;font-weight:600">
-                            {{.ResponseCode}}
-                        </span>
-                    </td>
-                </tr>
-                {{end}}
-            </tbody>
+            <tbody id="proj-traffic-body"></tbody>
         </table>
     </div>
-    {{else}}
-    <div class="empty-state">No traffic captured for this project yet.</div>
-    {{end}}
 </div>
 
 <!-- ── Build schema notice (no schema yet) ─────────────────────────────── -->
@@ -140,6 +115,10 @@
 </div>
 {{end}}
 
+<style>
+@keyframes rowFlash { from { background: rgba(34,197,94,.25); } to {} }
+.row-new td { animation: rowFlash 1.4s ease-out; }
+</style>
 <script>
 const PROJECT_ID = '{{.Project.ID}}';
 const PROJECT_NAME = '{{.Project.Name}}';
@@ -197,17 +176,143 @@ function projStartProxy() {
                 method: 'POST',
                 headers: {'Content-Type':'application/json'},
                 body: JSON.stringify({ projectId: PROJECT_ID }),
-            }).then(() => projCheckStatus());
+            }).then(() => {
+                projCheckStatus();
+                projConnectSSE();
+            });
         })
         .catch(e => { btn.disabled = false; alert(e.message); });
 }
 
 function projStopProxy() {
     fetch('/api/proxy/stop', { method: 'POST' })
-        .then(() => projCheckStatus());
+        .then(() => {
+            projCheckStatus();
+            if (projSSE) { projSSE.close(); projSSE = null; }
+        });
 }
 
 projCheckStatus();
+
+// ── Live traffic table ───────────────────────────────────────────────────
+let projTraffic = [];
+let projSSE = null;
+
+function escH(s) {
+    const d = document.createElement('div');
+    d.textContent = String(s != null ? s : '');
+    return d.innerHTML;
+}
+
+function renderProjTraffic() {
+    const tbody = document.getElementById('proj-traffic-body');
+    const badge = document.getElementById('traffic-badge');
+    badge.textContent = projTraffic.length + ' request' + (projTraffic.length !== 1 ? 's' : '');
+
+    if (projTraffic.length === 0) {
+        tbody.textContent = '';
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.style.cssText = 'text-align:center;color:var(--text-muted);padding:2rem';
+        td.textContent = 'No traffic captured for this project yet.';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+    }
+
+    tbody.textContent = '';
+    projTraffic.forEach(t => {
+        const tr = document.createElement('tr');
+        const ts = new Date(t.timestamp).toLocaleTimeString();
+        const ok = t.responseCode < 400;
+
+        const tdTime = document.createElement('td');
+        tdTime.style.cssText = 'font-size:.78rem;color:var(--text-muted)';
+        tdTime.textContent = ts;
+
+        const tdMethod = document.createElement('td');
+        tdMethod.textContent = t.method;
+
+        const tdHost = document.createElement('td');
+        tdHost.style.cssText = 'font-family:var(--font-mono);font-size:.78rem';
+        tdHost.textContent = t.host;
+
+        const tdOp = document.createElement('td');
+        const opSpan = document.createElement('span');
+        if (t.operationName) {
+            opSpan.style.cssText = 'color:var(--accent);font-family:var(--font-mono);font-size:.78rem';
+            opSpan.textContent = t.operationName;
+        } else {
+            opSpan.style.cssText = 'color:var(--text-muted);font-style:italic;font-size:.78rem';
+            opSpan.textContent = 'anonymous';
+        }
+        tdOp.appendChild(opSpan);
+
+        const tdStatus = document.createElement('td');
+        const statusSpan = document.createElement('span');
+        statusSpan.className = ok ? 'status-ok' : 'status-err';
+        statusSpan.style.cssText = 'font-family:var(--font-mono);font-size:.78rem;font-weight:600';
+        statusSpan.textContent = t.responseCode;
+        tdStatus.appendChild(statusSpan);
+
+        tr.append(tdTime, tdMethod, tdHost, tdOp, tdStatus);
+        tbody.appendChild(tr);
+    });
+}
+
+function projConnectSSE() {
+    if (projSSE) { projSSE.close(); projSSE = null; }
+    const src = new EventSource('/api/proxy/sse');
+    src.onmessage = e => {
+        try {
+            const req = JSON.parse(e.data);
+            if (!req || !req.id) return;
+            // Only show traffic tagged with THIS project
+            if (!req.projectId || req.projectId !== PROJECT_ID) return;
+            if (projTraffic.some(t => t.id === req.id)) return;
+            projTraffic.unshift(req);
+            renderProjTraffic();
+            // Also update the header count
+            const headerCount = document.querySelector('[data-traffic-count]');
+            if (headerCount) headerCount.textContent = projTraffic.length + ' requests captured';
+            requestAnimationFrame(() => {
+                const first = document.querySelector('#proj-traffic-body tr:first-child');
+                if (first) {
+                    first.classList.remove('row-new');
+                    void first.offsetWidth;
+                    first.classList.add('row-new');
+                }
+            });
+        } catch (_) {}
+    };
+    src.onerror = () => {
+        src.close();
+        projSSE = null;
+        setTimeout(() => {
+            fetch('/api/proxy/status').then(r => r.json()).then(s => {
+                if (s.running && s.projectId === PROJECT_ID) projConnectSSE();
+            }).catch(() => {});
+        }, 3000);
+    };
+    projSSE = src;
+}
+
+// Load initial traffic for this project via API, then connect SSE
+async function initTraffic() {
+    try {
+        const data = await fetch('/api/proxy/traffic?limit=2000&project=' + PROJECT_ID).then(r => r.json());
+        projTraffic = Array.isArray(data) ? data : [];
+    } catch (_) { projTraffic = []; }
+    renderProjTraffic();
+
+    // Connect SSE if proxy is running for this project
+    try {
+        const s = await fetch('/api/proxy/status').then(r => r.json());
+        if (s.running && s.projectId === PROJECT_ID) projConnectSSE();
+    } catch (_) {}
+}
+initTraffic();
 
 function inferSchema(projectId) {
     const btn = event.target;
