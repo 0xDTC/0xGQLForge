@@ -68,6 +68,13 @@ function runAnalysis(schemaId) {
     });
 }
 
+// HTML-escape to prevent XSS from schema-derived data
+function escH(s) {
+    const d = document.createElement('div');
+    d.textContent = String(s != null ? s : '');
+    return d.innerHTML;
+}
+
 function renderAnalysis(data) {
     const container = document.getElementById('analysis-results');
     let html = '';
@@ -76,7 +83,7 @@ function renderAnalysis(data) {
     if (data.mutations && data.mutations.length > 0) {
         html += '<div class="card analysis-card"><div class="card-header"><h2>Dangerous Mutations (' + data.mutations.length + ')</h2></div><div class="card-body"><table class="table"><thead><tr><th>Mutation</th><th>Reason</th><th>Severity</th></tr></thead><tbody>';
         data.mutations.forEach(m => {
-            html += '<tr><td><code>' + m.name + '</code></td><td>' + m.reason + '</td><td><span class="badge badge-' + m.severity + '">' + m.severity + '</span></td></tr>';
+            html += '<tr><td><code>' + escH(m.name) + '</code></td><td>' + escH(m.reason) + '</td><td><span class="badge badge-' + escH(m.severity) + '">' + escH(m.severity) + '</span></td></tr>';
         });
         html += '</tbody></table></div></div>';
     }
@@ -85,7 +92,7 @@ function renderAnalysis(data) {
     if (data.idor && data.idor.length > 0) {
         html += '<div class="card analysis-card"><div class="card-header"><h2>IDOR Candidates (' + data.idor.length + ')</h2></div><div class="card-body"><table class="table"><thead><tr><th>Field</th><th>Argument</th><th>Pattern</th><th>Risk</th></tr></thead><tbody>';
         data.idor.forEach(i => {
-            html += '<tr><td><code>' + i.fieldName + '</code></td><td><code>' + i.argName + '</code></td><td>' + i.pattern + '</td><td><span class="badge badge-' + i.risk + '">' + i.risk + '</span></td></tr>';
+            html += '<tr><td><code>' + escH(i.fieldName) + '</code></td><td><code>' + escH(i.argName) + '</code></td><td>' + escH(i.pattern) + '</td><td><span class="badge badge-' + escH(i.risk) + '">' + escH(i.risk) + '</span></td></tr>';
         });
         html += '</tbody></table></div></div>';
     }
@@ -96,7 +103,7 @@ function renderAnalysis(data) {
         if (risky.length > 0) {
             html += '<div class="card analysis-card"><div class="card-header"><h2>High Complexity Operations (' + risky.length + ')</h2></div><div class="card-body"><table class="table"><thead><tr><th>Operation</th><th>Score</th><th>Fields</th><th>List Nesting</th><th>Risk</th></tr></thead><tbody>';
             risky.forEach(c => {
-                html += '<tr><td><code>' + c.operationName + '</code></td><td>' + c.score.toFixed(0) + '</td><td>' + c.fieldCount + '</td><td>' + c.listNesting + '</td><td><span class="badge badge-' + c.risk + '">' + c.risk + '</span></td></tr>';
+                html += '<tr><td><code>' + escH(c.operationName) + '</code></td><td>' + c.score.toFixed(0) + '</td><td>' + c.fieldCount + '</td><td>' + c.listNesting + '</td><td><span class="badge badge-' + escH(c.risk) + '">' + escH(c.risk) + '</span></td></tr>';
             });
             html += '</tbody></table></div></div>';
         }
@@ -108,7 +115,7 @@ function renderAnalysis(data) {
         if (deep.length > 0) {
             html += '<div class="card analysis-card"><div class="card-header"><h2>Deep Query Paths (' + deep.length + ')</h2></div><div class="card-body"><table class="table"><thead><tr><th>Operation</th><th>Max Depth</th><th>Deepest Path</th></tr></thead><tbody>';
             deep.forEach(d => {
-                html += '<tr><td><code>' + d.operationName + '</code></td><td>' + d.maxDepth + '</td><td><code>' + (d.fieldPaths[0] || '') + '</code></td></tr>';
+                html += '<tr><td><code>' + escH(d.operationName) + '</code></td><td>' + d.maxDepth + '</td><td><code>' + escH(d.fieldPaths[0] || '') + '</code></td></tr>';
             });
             html += '</tbody></table></div></div>';
         }
@@ -119,7 +126,7 @@ function renderAnalysis(data) {
         html += '<div class="card analysis-card"><div class="card-header"><h2>Authorization Patterns</h2></div><div class="card-body">';
         html += '<p>Auth directives detected: ' + (data.authz.hasAuth ? 'Yes' : 'No') + '</p>';
         if (data.authz.sensitiveOps && data.authz.sensitiveOps.length > 0) {
-            html += '<p>Sensitive operations: ' + data.authz.sensitiveOps.map(o => '<code>' + o + '</code>').join(', ') + '</p>';
+            html += '<p>Sensitive operations: ' + data.authz.sensitiveOps.map(o => '<code>' + escH(o) + '</code>').join(', ') + '</p>';
         }
         html += '</div></div>';
     }
@@ -147,7 +154,7 @@ function tryBypass() {
     .then(results => {
         let html = '<table class="table" style="margin-top:1rem;"><thead><tr><th>Technique</th><th>Description</th><th>Result</th></tr></thead><tbody>';
         results.forEach(r => {
-            html += '<tr class="' + (r.success ? 'row-success' : '') + '"><td><code>' + r.technique + '</code></td><td>' + r.description + '</td><td>' + (r.success ? '<span class="badge badge-critical">SUCCESS</span>' : 'Failed') + '</td></tr>';
+            html += '<tr class="' + (r.success ? 'row-success' : '') + '"><td><code>' + escH(r.technique) + '</code></td><td>' + escH(r.description) + '</td><td>' + (r.success ? '<span class="badge badge-critical">SUCCESS</span>' : 'Failed') + '</td></tr>';
         });
         html += '</tbody></table>';
         div.innerHTML = html;
@@ -171,12 +178,12 @@ function fuzzFields() {
         let html = '<div style="margin-top:1rem;">';
         if (result.validFields && result.validFields.length > 0) {
             html += '<h3>Valid Fields Found (' + result.validFields.length + ')</h3><ul>';
-            result.validFields.forEach(f => html += '<li><code>' + f + '</code></li>');
+            result.validFields.forEach(f => html += '<li><code>' + escH(f) + '</code></li>');
             html += '</ul>';
         }
         if (result.suggestions && result.suggestions.length > 0) {
             html += '<h3>Suggestions from Server</h3><ul>';
-            result.suggestions.forEach(s => html += '<li><code>' + s + '</code></li>');
+            result.suggestions.forEach(s => html += '<li><code>' + escH(s) + '</code></li>');
             html += '</ul>';
         }
         if ((!result.validFields || result.validFields.length === 0) && (!result.suggestions || result.suggestions.length === 0)) {

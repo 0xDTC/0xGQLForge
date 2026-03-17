@@ -262,6 +262,11 @@ func (p *Proxy) forwardAndCapture(clientConn net.Conn, req *http.Request) {
 		}
 	}
 
+	// Remove Accept-Encoding so Go's http.Transport decompresses gzip/br
+	// responses transparently. This ensures respBody is always plain text,
+	// which is critical for GraphQL detection, schema inference, and storage.
+	req.Header.Del("Accept-Encoding")
+
 	resp, err := p.client.Do(req)
 	if err != nil {
 		// Drain any unconsumed request body to keep the stream in sync
@@ -297,7 +302,7 @@ func (p *Proxy) forwardAndCapture(clientConn net.Conn, req *http.Request) {
 	respBuf.WriteString(fmt.Sprintf("HTTP/1.1 %s\r\n", resp.Status))
 	for k, vals := range resp.Header {
 		kl := strings.ToLower(k)
-		if kl == "transfer-encoding" || kl == "content-length" {
+		if kl == "transfer-encoding" || kl == "content-length" || kl == "content-encoding" {
 			continue
 		}
 		for _, v := range vals {

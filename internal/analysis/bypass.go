@@ -18,8 +18,9 @@ func TryBypass(targetURL string) ([]schema.BypassResult, error) {
 	if targetURL == "" {
 		return nil, fmt.Errorf("target URL is required")
 	}
-	if _, err := url.Parse(targetURL); err != nil {
-		return nil, fmt.Errorf("invalid target URL: %w", err)
+	parsed, err := url.ParseRequestURI(targetURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fmt.Errorf("invalid target URL: must be http or https")
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	var results []schema.BypassResult

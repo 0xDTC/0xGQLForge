@@ -303,7 +303,11 @@ func parseOpKind(query string) string {
 
 func isIDField(name string) bool {
 	lower := strings.ToLower(name)
-	return lower == "id" || strings.HasSuffix(lower, "_id") || strings.HasSuffix(lower, "Id")
+	if lower == "id" || strings.HasSuffix(lower, "_id") {
+		return true
+	}
+	// Match camelCase like userId, profileId, orderId (check original case)
+	return len(name) > 2 && strings.HasSuffix(name, "Id")
 }
 
 // pascalCase capitalises the first letter: "userProfile" → "UserProfile".

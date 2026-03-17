@@ -92,7 +92,11 @@ function parseIntrospection() {
                 resultDiv.textContent = 'Error: ' + data.error;
             } else {
                 resultDiv.className = 'parse-result success';
-                resultDiv.innerHTML = `Imported: ${data.typeCount} types, ${data.queryCount} queries, ${data.mutationCount} mutations. <a href="${data.redirectURL}">View Schema &rarr;</a>`;
+                resultDiv.textContent = 'Imported: ' + data.typeCount + ' types, ' + data.queryCount + ' queries, ' + data.mutationCount + ' mutations. ';
+                const link = document.createElement('a');
+                link.href = data.redirectURL;
+                link.textContent = 'View Schema \u2192';
+                resultDiv.appendChild(link);
                 setTimeout(() => { window.location.href = data.redirectURL; }, 1500);
             }
         })

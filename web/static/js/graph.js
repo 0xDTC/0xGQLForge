@@ -459,8 +459,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 tooltip.style.left = (e.clientX - r.left + 15) + 'px';
                 tooltip.style.top  = (e.clientY - r.top  - 10) + 'px';
             })
-            .on('mouseout', function () {
-                if (!focusedId) d3.select(this).attr('stroke', '#2d3548');
+            .on('mouseout', function (_e, d) {
+                if (!focusedId) {
+                    d3.select(this).attr('stroke', '#2d3548');
+                } else {
+                    // Restore link to correct focus-lineage colour
+                    const s = d.source ? (d.source.id || d.source) : null;
+                    const t = d.target ? (d.target.id || d.target) : null;
+                    const ids = lineageIds(focusedId);
+                    d3.select(this).attr('stroke',
+                        (ids.has(s) && ids.has(t)) ? '#94a3b8' : '#2d3548');
+                }
                 tooltip.style.display = 'none';
             });
 

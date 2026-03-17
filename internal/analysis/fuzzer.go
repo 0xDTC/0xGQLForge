@@ -60,8 +60,9 @@ func FuzzFields(targetURL string, typeName string, words []string) (schema.FuzzR
 	if targetURL == "" {
 		return schema.FuzzResult{}, fmt.Errorf("target URL is required")
 	}
-	if _, err := url.Parse(targetURL); err != nil {
-		return schema.FuzzResult{}, fmt.Errorf("invalid target URL: %w", err)
+	parsed, err := url.ParseRequestURI(targetURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return schema.FuzzResult{}, fmt.Errorf("invalid target URL: must be http or https")
 	}
 	if len(words) == 0 {
 		words = DefaultFieldWordlist

@@ -73,17 +73,21 @@ func (cm *CertManager) GetCertificate(host string) (*tls.Certificate, error) {
 
 	// Use LoadOrStore with a sync.Once to ensure only one goroutine mints per host.
 	entry := &certMintEntry{}
-	actual, _ := cm.mintOnce.LoadOrStore(host, entry)
+	actual, loaded := cm.mintOnce.LoadOrStore(host, entry)
 	result := actual.(*certMintEntry)
 	result.once.Do(func() {
 		result.cert, result.err = cm.mintCert(host)
 		if result.err == nil {
 			cm.certCache.Store(host, result.cert)
-			cm.mintOnce.Delete(host) // prune once-entry after successful cache
 		}
 	})
+	// Only the goroutine that stored the entry should prune it.
+	// Waiters must not delete — a racing new LoadOrStore could have
+	// stored a fresh entry that would be incorrectly deleted.
+	if !loaded {
+		cm.mintOnce.Delete(host)
+	}
 	if result.err != nil {
-		cm.mintOnce.Delete(host) // allow retry on failure
 		return nil, result.err
 	}
 	return result.cert, nil

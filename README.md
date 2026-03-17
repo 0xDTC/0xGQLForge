@@ -7,15 +7,16 @@ A GraphQL reconnaissance and security testing tool built in Go. Single binary, z
 ## Features
 
 - **Introspection Parser** — Paste introspection JSON, get full schema analysis
-- **Schema Visualization** — Interactive D3.js force-directed graph of type relationships
-- **Query Generator** — Auto-build queries/mutations with correct arguments and example values
-- **MITM Proxy** — Intercept HTTPS traffic, detect and capture GraphQL operations in real-time via SSE
-- **Proxy Projects** — Organize captured traffic into named projects, link inferred schemas to each
+- **Schema Visualization** — Interactive D3.js ERD-style graph with BFS column layout, click-to-generate queries on any node, operation picker context menu
+- **Query Generator** — Auto-build queries/mutations with correct arguments, example values, and inline union/interface fragments
+- **MITM Proxy** — Intercept HTTPS traffic, detect and capture GraphQL operations in real-time via SSE with automatic gzip decompression
+- **Proxy Projects** — Organize captured traffic into named projects; start/stop proxy directly from project page; live-updating traffic tables via SSE
 - **Schema Inference** — Parse response bodies to reconstruct real object types and graph edges; auto-detect introspection responses for instant full schemas
-- **Similarity Engine** — Fingerprint, cluster, and compare captured queries structurally
+- **Instagram/Meta Support** — Captures form-encoded persisted queries (`doc_id`, `fb_api_req_friendly_name`) from Instagram, Facebook, and other Meta GraphQL endpoints
+- **Similarity Engine** — Fingerprint, cluster, and compare captured queries structurally with stable fingerprint-based IDs
 - **Security Analysis** — Depth analysis, complexity scoring, IDOR detection, dangerous mutation flagging
 - **Introspection Bypass** — 11 automated bypass techniques against WAF-protected endpoints
-- **Field Fuzzer** — Wordlist-based field discovery via error message mining
+- **Field Fuzzer** — Wordlist-based field discovery via error message mining with URL validation
 - **Schema Diffing** — Compare schema versions, detect breaking changes and privilege escalation
 
 ## Quick Start
@@ -48,7 +49,7 @@ Navigate to **Schemas** (home page). Paste your introspection JSON. Supported fo
 {"queryType":{...}, "types":[...]}
 ```
 
-The schema explorer shows all types, operations, and relationships. From there open the **Graph** (D3.js force-directed visualization) or the **Generator**.
+The schema explorer shows all types, operations, and relationships. From there open the **Graph** (D3.js ERD visualization) or the **Generator**.
 
 ### 2. Proxy Mode + Schema Inference
 
@@ -60,33 +61,51 @@ The proxy is a MITM HTTP/HTTPS interceptor. It captures only GraphQL traffic and
 3. Configure your browser or tool to use `127.0.0.1:8888` as the proxy
 4. Browse any GraphQL API — requests appear in the traffic table in real-time
 
-**Link to a Project:**
-- Create a project on the **Projects** page first
-- On the **Proxy** page, select the project from the dropdown and click **Apply**
-- All subsequent captured traffic is tagged to that project
+**Project Workflow (recommended):**
+1. Create a project on the **Projects** page
+2. Open the project and click **Start Proxy for This Project**
+3. All captured traffic is automatically tagged to that project
+4. Traffic appears live on both the project detail page and the proxy page
+5. Click **Build Schema from Traffic** to infer a schema from captured responses
+
+**Supported GraphQL Formats:**
+- Standard JSON POST: `{"query":"...","operationName":"...","variables":{...}}`
+- Batch queries: `[{"query":"..."},{"query":"..."}]` (first item used)
+- Form-encoded (Instagram/Meta): `doc_id=123&variables={}&fb_api_req_friendly_name=SomeQuery`
+- GET with query params: `?query={...}&operationName=...&variables={}`
 
 **Build a Schema from Traffic:**
 - Go to **Projects → [your project] → Build Schema from Traffic**
 - The inference engine walks captured response bodies to discover real object types:
   - `{"data":{"user":{"id":"1","name":"Alice","posts":[...]}}}` → creates `User` and `Post` types with edges
-  - `id` / `*Id` fields → `ID` scalar; booleans → `Boolean`; numbers → `Int` / `Float`
+  - `id` / `userId` / `*_id` fields → `ID` scalar; booleans → `Boolean`; numbers → `Int` / `Float`
   - Arrays of objects → `[TypeName]` list references with automatic singularization
-- If an introspection query was made through the proxy, the full schema is extracted automatically from the response — no manual steps needed
+  - Operations with no JSON response → `OperationNameResponse` placeholder types
+- If an introspection query was made through the proxy, the full schema is extracted automatically from the response
 
 **Schema Grows Over Time:**
 The more endpoints you browse, the richer the graph becomes. Each captured response adds new types or merges new fields into existing types.
 
-### 3. Query Generation
+### 3. Schema Graph
 
-Click any operation in the schema explorer or generator view. 0xGQLForge will:
+The interactive graph shows all schema types as ERD-style cards with:
+- **BFS column layout** from root types (Query/Mutation/Subscription)
+- **Auto-fit zoom** to show all nodes on initial load
+- **Click-to-focus** a node to highlight its full lineage (ancestors + descendants)
+- **Green dot on every reachable node** — click to generate a query. If multiple operations reach a node, a context menu lets you pick which query/mutation/subscription to generate
+- **Drag nodes** to rearrange; **scroll to zoom**; **Reset Layout** to recompute
+
+### 4. Query Generation
+
+Click any operation in the schema explorer, generator view, or graph green dot. 0xGQLForge will:
 
 - Build a complete query with proper variable definitions
 - Fill in context-aware example values (emails, IDs, pagination params)
 - Expand nested return types to configurable depth
-- Generate inline fragments for unions/interfaces
+- Generate inline fragments for unions/interfaces at consistent depth
 - Show a ready-to-use cURL command
 
-### 4. Security Analysis
+### 5. Security Analysis
 
 Run the full analysis suite against any parsed schema:
 
@@ -181,6 +200,38 @@ graph TB
     GD --> SSE -->|live event| U
 
     T[Target GraphQL API] <-->|HTTP/HTTPS| PR
+
+    style U fill:#3b82f6,color:#fff,stroke:#1d4ed8
+    style T fill:#ef4444,color:#fff,stroke:#b91c1c
+    style WS fill:#0ea5e9,color:#fff,stroke:#0284c7
+    style PR fill:#f59e0b,color:#000,stroke:#d97706
+    style CM fill:#f59e0b,color:#000,stroke:#d97706
+    style GD fill:#f59e0b,color:#000,stroke:#d97706
+    style SSE fill:#22c55e,color:#000,stroke:#16a34a
+    style SR fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style TR fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style AR fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style PJR fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style IP fill:#06b6d4,color:#000,stroke:#0891b2
+    style QG fill:#06b6d4,color:#000,stroke:#0891b2
+    style SE fill:#06b6d4,color:#000,stroke:#0891b2
+    style INF fill:#06b6d4,color:#000,stroke:#0891b2
+    style AD fill:#ec4899,color:#fff,stroke:#db2777
+    style AC fill:#ec4899,color:#fff,stroke:#db2777
+    style AM fill:#ec4899,color:#fff,stroke:#db2777
+    style AI fill:#ec4899,color:#fff,stroke:#db2777
+    style AB fill:#ec4899,color:#fff,stroke:#db2777
+    style AF fill:#ec4899,color:#fff,stroke:#db2777
+    style ADF fill:#ec4899,color:#fff,stroke:#db2777
+    style MW fill:#0ea5e9,color:#fff,stroke:#0284c7
+    style TM fill:#0ea5e9,color:#fff,stroke:#0284c7
+    style HSL fill:#14b8a6,color:#000,stroke:#0d9488
+    style HI fill:#14b8a6,color:#000,stroke:#0d9488
+    style HSV fill:#14b8a6,color:#000,stroke:#0d9488
+    style HG fill:#14b8a6,color:#000,stroke:#0d9488
+    style HP fill:#14b8a6,color:#000,stroke:#0d9488
+    style HPJ fill:#14b8a6,color:#000,stroke:#0d9488
+    style HA fill:#14b8a6,color:#000,stroke:#0d9488
 ```
 
 ### Data Flow
@@ -239,6 +290,20 @@ flowchart TB
 
     D2 --> P6
     P6 -->|Clusters + fingerprints| USER
+
+    style USER fill:#3b82f6,color:#fff,stroke:#1d4ed8
+    style TARGET fill:#ef4444,color:#fff,stroke:#b91c1c
+    style P1 fill:#06b6d4,color:#000,stroke:#0891b2
+    style P4 fill:#f59e0b,color:#000,stroke:#d97706
+    style P2 fill:#14b8a6,color:#000,stroke:#0d9488
+    style P3 fill:#14b8a6,color:#000,stroke:#0d9488
+    style P5 fill:#ec4899,color:#fff,stroke:#db2777
+    style P6 fill:#06b6d4,color:#000,stroke:#0891b2
+    style P7 fill:#22c55e,color:#000,stroke:#16a34a
+    style D1 fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style D2 fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style D3 fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style D4 fill:#8b5cf6,color:#fff,stroke:#7c3aed
 ```
 
 ### MITM Proxy Flow
@@ -252,24 +317,74 @@ sequenceDiagram
     participant DB as SQLite
     participant UI as Web UI (SSE)
 
-    C->>P: CONNECT target.com:443
-    P->>C: 200 Connection Established
-    P->>CA: GetCertificate("target.com")
-    CA-->>CA: Mint ECDSA cert signed by local CA
-    CA->>P: TLS Certificate
-    P->>C: TLS Handshake with minted cert
+    rect rgb(30, 41, 59)
+        C->>P: CONNECT target.com:443
+        P->>C: 200 Connection Established
+        P->>CA: GetCertificate("target.com")
+        CA-->>CA: Mint ECDSA cert signed by local CA
+        CA->>P: TLS Certificate
+        P->>C: TLS Handshake with minted cert
+    end
 
     loop Per GraphQL request
-        C->>P: POST /graphql {"query":"...","variables":{}}
-        P-->>P: Detect GraphQL (path / Content-Type / ?query=)
-        P-->>P: Extract query, operationName, variables
-        P->>T: Forward original request
-        T->>P: GraphQL response {"data":{...}}
-        P->>C: Forward response to client
+        rect rgb(15, 23, 42)
+            C->>P: POST /graphql {"query":"...","variables":{}}
+            P-->>P: Strip Accept-Encoding for transparent decompression
+            P-->>P: Detect GraphQL (path / Content-Type / ?query=)
+            P-->>P: Extract query, operationName, variables, doc_id
+            P->>T: Forward original request
+            T->>P: GraphQL response {"data":{...}}
+            P-->>P: Read decompressed body (gzip/br transparent)
+            P->>C: Forward response to client
+        end
 
-        P->>DB: Store CapturedRequest incl. full response_body
-        P->>UI: SSE data event → new row in traffic table
+        rect rgb(5, 46, 22)
+            P->>DB: Store CapturedRequest incl. full response_body + project_id
+            P->>UI: SSE data event with 15s heartbeat keepalive
+        end
     end
+```
+
+### Project-Proxy Integration
+
+```mermaid
+flowchart LR
+    subgraph "Project Page"
+        PP[Start Proxy<br/>for This Project]
+        PT[Live Traffic Table<br/>SSE filtered by project]
+        PB[Build Schema<br/>from Traffic]
+    end
+
+    subgraph "Proxy Engine"
+        PR[MITM Proxy :8888]
+        PID[SetProjectID]
+        BC[Broadcast SSE]
+    end
+
+    subgraph "Storage"
+        TR[(Traffic<br/>project_id tagged)]
+        PJ[(Projects<br/>proxy_addr saved)]
+        SR[(Schemas)]
+    end
+
+    PP -->|POST /api/proxy/start| PR
+    PP -->|POST /api/proxy/project| PID
+    PID -->|Tag all new traffic| TR
+    PID -->|Save proxy addr| PJ
+    PR -->|Capture + store| TR
+    PR --> BC -->|SSE filtered by projectId| PT
+    PB -->|Read response bodies| TR
+    PB -->|Infer types| SR
+
+    style PP fill:#3b82f6,color:#fff,stroke:#1d4ed8
+    style PT fill:#22c55e,color:#000,stroke:#16a34a
+    style PB fill:#f59e0b,color:#000,stroke:#d97706
+    style PR fill:#f59e0b,color:#000,stroke:#d97706
+    style PID fill:#f59e0b,color:#000,stroke:#d97706
+    style BC fill:#22c55e,color:#000,stroke:#16a34a
+    style TR fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style PJ fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style SR fill:#8b5cf6,color:#fff,stroke:#7c3aed
 ```
 
 ### Schema Inference Flow
@@ -286,16 +401,16 @@ flowchart TD
     INTRO -->|No| WALK[Walk each response body]
 
     WALK --> DATA{"Has data field?"}
-    DATA -->|No / null| SKIP[Skip — no type info]
-    DATA -->|Yes| FIELDS[Iterate top-level fields<br/>→ root Query/Mutation fields]
+    DATA -->|No / null| FALLBACK[Create OperationNameResponse<br/>placeholder type]
+    DATA -->|Yes| FIELDS[Iterate top-level fields<br/>to root Query/Mutation fields]
 
     FIELDS --> VAL{Field value shape?}
-    VAL -->|string — id field| IDS[TypeRef: ID scalar]
+    VAL -->|string — id/userId/*_id| IDS[TypeRef: ID scalar]
     VAL -->|string — other| STR[TypeRef: String scalar]
     VAL -->|boolean| BOOL[TypeRef: Boolean scalar]
     VAL -->|integer| INT[TypeRef: Int scalar]
     VAL -->|float| FLT[TypeRef: Float scalar]
-    VAL -->|null| UNK[TypeRef: String — unknown]
+    VAL -->|null| UNK[TypeRef: JSON — unknown]
     VAL -->|JSON object| OBJ["Create Object type<br/>name = PascalCase(field)<br/>Recurse sub-fields"]
     VAL -->|array of objects| LIST["Create List of Object type<br/>name = PascalCase(singularize(field))<br/>Recurse first element"]
     VAL -->|array of scalars| SLST[Create List of scalar type]
@@ -304,11 +419,27 @@ flowchart TD
     MERGE -->|Yes| MRG[Merge fields — union of all<br/>fields seen across all responses]
     MERGE -->|No| NEW[Register new type]
 
-    IDS & STR & BOOL & INT & FLT & UNK & MRG & NEW & SLST --> ROOT[Add field to root type<br/>Query / Mutation / Subscription]
+    IDS & STR & BOOL & INT & FLT & UNK & FALLBACK & MRG & NEW & SLST --> ROOT[Add field to root type<br/>Query / Mutation / Subscription]
 
     ROOT --> BUILD[Assemble schema.Schema<br/>with all discovered types]
     BUILD --> SAVE[Save to SchemaRepo<br/>Link schema ID to Project]
     SAVE --> GRAPH([Graph now shows real nodes + edges<br/>that grow with each new request])
+
+    style START fill:#3b82f6,color:#fff,stroke:#1d4ed8
+    style FULL fill:#22c55e,color:#000,stroke:#16a34a
+    style SAVE fill:#22c55e,color:#000,stroke:#16a34a
+    style GRAPH fill:#22c55e,color:#000,stroke:#16a34a
+    style OBJ fill:#06b6d4,color:#000,stroke:#0891b2
+    style LIST fill:#06b6d4,color:#000,stroke:#0891b2
+    style FALLBACK fill:#f59e0b,color:#000,stroke:#d97706
+    style IDS fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style STR fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style BOOL fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style INT fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style FLT fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style UNK fill:#6b7280,color:#fff,stroke:#4b5563
+    style MRG fill:#14b8a6,color:#000,stroke:#0d9488
+    style NEW fill:#14b8a6,color:#000,stroke:#0d9488
 ```
 
 ### Query Generation Flow
@@ -327,7 +458,7 @@ flowchart TD
     EXPAND --> CHECK{Field kind?}
     CHECK -->|Scalar / Enum| LEAF[Emit field name]
     CHECK -->|Object| DEPTH{depth < maxDepth?}
-    CHECK -->|Union / Interface| FRAG[Inline fragments per possibleType]
+    CHECK -->|Union / Interface| FRAG[Inline fragments<br/>per possibleType]
 
     DEPTH -->|Yes| RECURSE[Recurse into object fields]
     DEPTH -->|No| STOP[Stop — depth limit reached]
@@ -337,6 +468,15 @@ flowchart TD
     LEAF --> FORMAT[Format valid GraphQL string]
     STOP --> FORMAT
     FORMAT --> OUTPUT([Query + variables JSON + cURL command])
+
+    style START fill:#3b82f6,color:#fff,stroke:#1d4ed8
+    style OUTPUT fill:#22c55e,color:#000,stroke:#16a34a
+    style VARDEFS fill:#f59e0b,color:#000,stroke:#d97706
+    style EXAMPLES fill:#f59e0b,color:#000,stroke:#d97706
+    style LEAF fill:#06b6d4,color:#000,stroke:#0891b2
+    style FRAG fill:#ec4899,color:#fff,stroke:#db2777
+    style RECURSE fill:#06b6d4,color:#000,stroke:#0891b2
+    style STOP fill:#6b7280,color:#fff,stroke:#4b5563
 ```
 
 ### Security Analysis Pipeline
@@ -346,7 +486,7 @@ flowchart LR
     SCHEMA([Parsed Schema]) --> SPLIT{Dispatch to modules}
 
     SPLIT --> DEPTH[Depth Analyzer<br/>Walk type tree<br/>Track max nesting]
-    SPLIT --> COMPLEX[Complexity Estimator<br/>Fields × list depth<br/>low / med / high / critical]
+    SPLIT --> COMPLEX[Complexity Estimator<br/>Fields x list depth<br/>low / med / high / critical]
     SPLIT --> MUTANT[Mutation Scanner<br/>Pattern match names<br/>delete / admin / grant / exec]
     SPLIT --> IDOR[IDOR Detector<br/>ID args on queries<br/>sequential / uuid / encoded]
     SPLIT --> AUTH[Auth Analyzer<br/>@auth directives<br/>Sensitive operation flags]
@@ -354,6 +494,54 @@ flowchart LR
     DEPTH & COMPLEX & MUTANT & IDOR & AUTH --> RESULTS([Report with severity ratings])
     RESULTS --> DB[(SQLite — AnalysisRepo)]
     RESULTS --> UI([Analysis View])
+
+    style SCHEMA fill:#3b82f6,color:#fff,stroke:#1d4ed8
+    style DEPTH fill:#ec4899,color:#fff,stroke:#db2777
+    style COMPLEX fill:#f59e0b,color:#000,stroke:#d97706
+    style MUTANT fill:#ef4444,color:#fff,stroke:#b91c1c
+    style IDOR fill:#ef4444,color:#fff,stroke:#b91c1c
+    style AUTH fill:#f59e0b,color:#000,stroke:#d97706
+    style RESULTS fill:#22c55e,color:#000,stroke:#16a34a
+    style DB fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style UI fill:#14b8a6,color:#000,stroke:#0d9488
+```
+
+### Graph Visualization Architecture
+
+```mermaid
+flowchart TD
+    subgraph "Data Pipeline"
+        S[Schema Model] --> BG[BuildGraphData<br/>resolver.go]
+        BG --> GD[GraphData<br/>nodes + links]
+    end
+
+    subgraph "D3.js Rendering"
+        GD --> BFS[BFS Column Layout<br/>from root types]
+        BFS --> CARDS[ERD Cards<br/>header + fields + connectors]
+        CARDS --> ZOOM[Auto-fit Zoom<br/>all nodes visible]
+    end
+
+    subgraph "Interactivity"
+        CARDS --> FOCUS[Click: Focus Node<br/>highlight full lineage]
+        CARDS --> GREEN[Green Dot<br/>on all reachable nodes]
+        GREEN --> PICK{Multiple ops?}
+        PICK -->|Yes| MENU[Context Menu<br/>pick query/mutation/subscription]
+        PICK -->|No| GEN[Generate + Copy query]
+        MENU --> GEN
+        CARDS --> DRAG[Drag to rearrange]
+        CARDS --> HOVER[Hover: preview lineage]
+    end
+
+    style S fill:#8b5cf6,color:#fff,stroke:#7c3aed
+    style BG fill:#06b6d4,color:#000,stroke:#0891b2
+    style GD fill:#06b6d4,color:#000,stroke:#0891b2
+    style BFS fill:#f59e0b,color:#000,stroke:#d97706
+    style CARDS fill:#14b8a6,color:#000,stroke:#0d9488
+    style ZOOM fill:#22c55e,color:#000,stroke:#16a34a
+    style GREEN fill:#22c55e,color:#000,stroke:#16a34a
+    style GEN fill:#3b82f6,color:#fff,stroke:#1d4ed8
+    style MENU fill:#ec4899,color:#fff,stroke:#db2777
+    style FOCUS fill:#f59e0b,color:#000,stroke:#d97706
 ```
 
 ---
@@ -365,7 +553,7 @@ flowchart LR
 ├── cmd/gqlforge/
 │   └── main.go                  # Entry point: flags, service wiring, graceful shutdown
 ├── internal/
-│   ├── server/                  # HTTP server, routes.go, middleware (recovery + logging)
+│   ├── server/                  # HTTP server, routes.go, middleware (recovery + logging + SSE flush)
 │   ├── handler/                 # Request handlers: schemas, proxy, projects, analysis
 │   ├── parser/                  # Introspection JSON parser (3 formats), query parser
 │   ├── schema/                  # Core models (Schema, Type, TypeRef, Field), graph builder
@@ -382,15 +570,15 @@ flowchart LR
 │   │   ├── layout.html          # Top navbar (Schemas | Projects | Proxy | theme toggle)
 │   │   ├── schemas.html         # Home: schema list + introspection upload
 │   │   ├── schema.html          # Schema explorer (types, operations, sidebar)
-│   │   ├── graph.html           # D3.js force-directed type graph
+│   │   ├── graph.html           # D3.js ERD-style type graph with BFS layout
 │   │   ├── generator.html       # Query/mutation builder + cURL
-│   │   ├── proxy.html           # Live traffic table (SSE) + inline filters + project link
+│   │   ├── proxy.html           # Live traffic table (SSE) + filters + project link
 │   │   ├── projects.html        # Project list with create/delete
-│   │   ├── project_detail.html  # Per-project traffic + schema inference trigger
+│   │   ├── project_detail.html  # Per-project traffic (SSE live) + proxy controls + schema inference
 │   │   └── analysis.html        # Security analysis dashboard
 │   └── static/
 │       ├── css/app.css          # Dark theme design system
-│       └── js/                  # D3.js v7, HTMX, app.js
+│       └── js/                  # D3.js v7, HTMX, graph.js, app.js
 ├── go.mod
 ├── Makefile
 └── README.md
@@ -406,9 +594,9 @@ flowchart LR
 | Web Framework | `net/http` stdlib | Method + path routing since Go 1.22, zero dependencies |
 | Frontend | Go templates + HTMX + D3.js | No build tooling, server-rendered HTML, vendored JS |
 | Database | SQLite (WAL mode) | Embedded, zero-config, portable, single-file persistence |
-| TLS / Crypto | `crypto/x509` + `crypto/ecdsa` | ECDSA P-256, fast per-host cert minting |
-| Graph Viz | D3.js v7 force-directed | Custom schema ERD with click/hover lineage highlighting |
-| Live Updates | Server-Sent Events (SSE) | Lightweight server push without WebSocket overhead |
+| TLS / Crypto | `crypto/x509` + `crypto/ecdsa` | ECDSA P-256, fast per-host cert minting with dedup |
+| Graph Viz | D3.js v7 | Custom ERD cards with BFS layout, lineage highlighting, operation picker |
+| Live Updates | Server-Sent Events (SSE) | Lightweight server push with 15s heartbeat keepalive |
 
 **External dependencies: 1** — `github.com/mattn/go-sqlite3` (CGO, C SQLite binding)
 
@@ -443,16 +631,21 @@ The proxy flags a request as GraphQL if **any** of these match:
 |---|---|
 | URL path contains `graphql` or `gql` | `/graphql`, `/api/gql`, `/v1/graphql` |
 | `GET` with `?query=` parameter | `GET /api?query={user{id}}` |
-| `POST` with `Content-Type: application/json` | Any JSON POST — recorded only if `query` field is present |
+| `POST` with JSON or form-encoded body | Standard JSON or `doc_id`/`query_hash` form fields |
 
-Supported body shapes: single `{"query":"...","operationName":"...","variables":{}}` or batch `[{"query":"..."},...]` (first item used).
+Supported body shapes:
+- Single: `{"query":"...","operationName":"...","variables":{}}`
+- Batch: `[{"query":"..."},{"query":"..."}]` (first item used)
+- Form-encoded: `doc_id=123&variables={}&fb_api_req_friendly_name=SomeQuery`
 
 ## Security Considerations
 
 - The MITM proxy uses `InsecureSkipVerify` when forwarding to targets — **by design** for a security testing tool. Do not use in production environments.
 - The web UI has **no authentication**. Bind to `localhost` or an isolated network only.
 - The CA private key at `~/.gqlforge/ca-key.pem` has restricted permissions. Protect this file — anyone with it can impersonate any HTTPS site to browsers that trust your CA.
-- The field fuzzer and bypass engine send HTTP requests to external targets. Use only against systems you are authorized to test.
+- The field fuzzer and bypass engine validate target URLs (http/https only) before sending requests. Use only against systems you are authorized to test.
+- All SQL queries use parameterized placeholders to prevent injection.
+- Response bodies are stored decompressed (gzip/br stripped transparently) for reliable JSON parsing.
 
 ## License
 

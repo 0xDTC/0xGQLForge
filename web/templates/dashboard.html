@@ -110,7 +110,11 @@ function parseIntrospection() {
             resultDiv.textContent = 'Error: ' + data.error;
         } else {
             resultDiv.className = 'parse-result success';
-            resultDiv.innerHTML = `Schema parsed: ${data.typeCount} types, ${data.queryCount} queries, ${data.mutationCount} mutations, ${data.subCount} subscriptions. <a href="${data.redirectURL}">View Schema</a>`;
+            resultDiv.textContent = 'Schema parsed: ' + data.typeCount + ' types, ' + data.queryCount + ' queries, ' + data.mutationCount + ' mutations, ' + data.subCount + ' subscriptions. ';
+            const link = document.createElement('a');
+            link.href = data.redirectURL;
+            link.textContent = 'View Schema';
+            resultDiv.appendChild(link);
             setTimeout(() => { window.location.href = data.redirectURL; }, 1500);
         }
     })
