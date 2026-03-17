@@ -17,12 +17,20 @@ import (
 	"time"
 )
 
+// certMintEntry deduplicates concurrent cert minting for the same host.
+type certMintEntry struct {
+	once sync.Once
+	cert *tls.Certificate
+	err  error
+}
+
 // CertManager handles CA certificate generation and per-host certificate minting.
 type CertManager struct {
 	caCert    *x509.Certificate
 	caKey     *ecdsa.PrivateKey
 	caTLS     tls.Certificate
 	certCache sync.Map // map[string]*tls.Certificate
+	mintOnce  sync.Map // map[string]*certResult — dedup concurrent mints
 	certDir   string
 }
 
@@ -52,6 +60,7 @@ func (cm *CertManager) CACertPath() string {
 }
 
 // GetCertificate returns a TLS certificate for the given hostname, generating one if needed.
+// Uses a per-host mutex via sync.Map to prevent duplicate cert minting under concurrent requests.
 func (cm *CertManager) GetCertificate(host string) (*tls.Certificate, error) {
 	// Strip port if present
 	if h, _, err := net.SplitHostPort(host); err == nil {
@@ -62,13 +71,21 @@ func (cm *CertManager) GetCertificate(host string) (*tls.Certificate, error) {
 		return cached.(*tls.Certificate), nil
 	}
 
-	cert, err := cm.mintCert(host)
-	if err != nil {
-		return nil, err
+	// Use LoadOrStore with a sync.Once to ensure only one goroutine mints per host.
+	entry := &certMintEntry{}
+	actual, _ := cm.mintOnce.LoadOrStore(host, entry)
+	result := actual.(*certMintEntry)
+	result.once.Do(func() {
+		result.cert, result.err = cm.mintCert(host)
+		if result.err == nil {
+			cm.certCache.Store(host, result.cert)
+		}
+	})
+	if result.err != nil {
+		cm.mintOnce.Delete(host) // allow retry on failure
+		return nil, result.err
 	}
-
-	cm.certCache.Store(host, cert)
-	return cert, nil
+	return result.cert, nil
 }
 
 func (cm *CertManager) generateCA(certPath, keyPath string) error {

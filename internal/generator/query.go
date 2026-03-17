@@ -131,6 +131,18 @@ func expandFields(b *strings.Builder, t *schema.Type, typeIndex map[string]*sche
 		}
 
 		if target.Kind == schema.KindUnion || target.Kind == schema.KindInterface {
+			if len(target.PossibleTypes) == 0 {
+				// No concrete types known — fall back to interface's own fields
+				if len(target.Fields) > 0 && depth < cfg.MaxDepth+1 {
+					b.WriteString(fmt.Sprintf("%s%s {\n", indent, f.Name))
+					expandFields(b, target, typeIndex, cfg, depth+1, visited)
+					b.WriteString(fmt.Sprintf("%s}\n", indent))
+				} else {
+					// Emit __typename as a safe fallback to avoid empty { }
+					b.WriteString(fmt.Sprintf("%s%s {\n%s    __typename\n%s}\n", indent, f.Name, indent, indent))
+				}
+				continue
+			}
 			b.WriteString(fmt.Sprintf("%s%s {\n", indent, f.Name))
 			// Write inline fragments for each possible type
 			for _, ptName := range target.PossibleTypes {

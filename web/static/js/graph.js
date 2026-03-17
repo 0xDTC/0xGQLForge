@@ -74,13 +74,53 @@ document.addEventListener('DOMContentLoaded', function () {
     const rootKindMap = {};
     graphData.nodes.forEach(n => { if (n.isRoot) rootKindMap[n.id] = n.rootKind; });
 
-    const nodeOps = {};
+    // Direct children of root types: maps nodeId → [{opName, kind}]
+    const directOps = {};
     graphData.links.forEach(l => {
         const srcId = typeof l.source === 'object' ? l.source.id : l.source;
         if (rootKindMap[srcId]) {
             const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-            if (!nodeOps[tgtId]) nodeOps[tgtId] = { opName: l.fieldName, kind: rootKindMap[srcId] };
+            if (!directOps[tgtId]) directOps[tgtId] = [];
+            const kind = rootKindMap[srcId];
+            const opName = l.fieldName;
+            // Avoid duplicates
+            if (!directOps[tgtId].some(o => o.opName === opName && o.kind === kind)) {
+                directOps[tgtId].push({ opName, kind });
+            }
         }
+    });
+
+    // BFS from each root-level operation field to find all reachable nodes.
+    // nodeOpsAll[nodeId] = [{opName, kind}, …] — all root operations that reach this node.
+    const nodeOpsAll = {};
+    const adjList = {};
+    graphData.links.forEach(l => {
+        const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+        if (!adjList[srcId]) adjList[srcId] = [];
+        adjList[srcId].push(tgtId);
+    });
+
+    Object.entries(directOps).forEach(([startId, ops]) => {
+        ops.forEach(op => {
+            // BFS from this direct child through the graph
+            const visited = new Set([startId]);
+            const queue = [startId];
+            let qi = 0;
+            while (qi < queue.length) {
+                const id = queue[qi++];
+                if (!nodeOpsAll[id]) nodeOpsAll[id] = [];
+                if (!nodeOpsAll[id].some(o => o.opName === op.opName && o.kind === op.kind)) {
+                    nodeOpsAll[id].push(op);
+                }
+                (adjList[id] || []).forEach(tgt => {
+                    if (!visited.has(tgt)) {
+                        visited.add(tgt);
+                        queue.push(tgt);
+                    }
+                });
+            }
+        });
     });
 
     // ── Pristine data ─────────────────────────────────────────────────────────
@@ -179,6 +219,29 @@ document.addEventListener('DOMContentLoaded', function () {
                 y  += nodeHeight(n) + ROW_Y_GAP;
             });
         });
+    }
+
+    // ── Auto-fit: zoom/pan to show all nodes ─────────────────────────────────
+    function zoomToFit(dur) {
+        if (!activeNodes || activeNodes.length === 0) return;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        activeNodes.forEach(n => {
+            const hh = nodeHeight(n) / 2;
+            minX = Math.min(minX, n.x - NODE_W / 2);
+            maxX = Math.max(maxX, n.x + NODE_W / 2);
+            minY = Math.min(minY, n.y - hh);
+            maxY = Math.max(maxY, n.y + hh);
+        });
+        const pad = 40;
+        const bw  = maxX - minX + pad * 2;
+        const bh  = maxY - minY + pad * 2;
+        const vw  = container.clientWidth;
+        const vh  = container.clientHeight;
+        const scale = Math.min(vw / bw, vh / bh, 1.5);
+        const tx  = vw / 2 - (minX + maxX) / 2 * scale;
+        const ty  = vh / 2 - (minY + maxY) / 2 * scale;
+        svg.transition().duration(dur)
+            .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
     }
 
     // ── Zoom ──────────────────────────────────────────────────────────────────
@@ -300,6 +363,63 @@ document.addEventListener('DOMContentLoaded', function () {
         .catch(err => showToast('Error: ' + err.message, true));
     }
 
+    // ── Operation picker context menu ──────────────────────────────────────────
+    let activeMenu = null;
+    function dismissMenu() {
+        if (activeMenu) { activeMenu.remove(); activeMenu = null; }
+    }
+    document.addEventListener('click', dismissMenu);
+
+    const kindIcon  = { query: '\u{1F50D}', mutation: '\u{270F}\u{FE0F}', subscription: '\u{1F4E1}' };
+    const kindColor = { query: '#93c5fd', mutation: '#fca5a5', subscription: '#fcd34d' };
+
+    function showOpPicker(screenX, screenY, ops) {
+        dismissMenu();
+        const menu = document.createElement('div');
+        menu.style.cssText = 'position:fixed;z-index:300;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:4px 0;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,.5);';
+        menu.style.left = screenX + 'px';
+        menu.style.top  = screenY + 'px';
+
+        ops.forEach(op => {
+            const item = document.createElement('div');
+            item.style.cssText = 'padding:6px 14px;cursor:pointer;font-size:13px;font-family:monospace;display:flex;align-items:center;gap:8px;color:#e2e8f0;';
+
+            const icon = document.createElement('span');
+            icon.textContent = kindIcon[op.kind] || '\u2022';
+            item.appendChild(icon);
+
+            const kSpan = document.createElement('span');
+            kSpan.style.color = kindColor[op.kind] || '#e2e8f0';
+            kSpan.textContent = op.kind;
+            item.appendChild(kSpan);
+
+            const arrow = document.createElement('span');
+            arrow.style.color = '#94a3b8';
+            arrow.textContent = '\u2192';
+            item.appendChild(arrow);
+
+            const name = document.createElement('span');
+            name.textContent = op.opName;
+            item.appendChild(name);
+
+            item.addEventListener('mouseenter', () => { item.style.background = '#334155'; });
+            item.addEventListener('mouseleave', () => { item.style.background = 'none'; });
+            item.addEventListener('click', e => {
+                e.stopPropagation();
+                dismissMenu();
+                if (schemaId) generateAndCopy(schemaId, op.opName, op.kind);
+            });
+            menu.appendChild(item);
+        });
+
+        document.body.appendChild(menu);
+        const rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) menu.style.left = (screenX - rect.width) + 'px';
+        if (rect.bottom > window.innerHeight) menu.style.top = (screenY - rect.height) + 'px';
+
+        activeMenu = menu;
+    }
+
     // ── Render ────────────────────────────────────────────────────────────────
     function redrawLinks() {
         if (linkSel) linkSel.attr('d', linkPath);
@@ -373,19 +493,31 @@ document.addEventListener('DOMContentLoaded', function () {
                     applyLineage(lineageIds(d.id), 0.15, 0.08, 120);
                 }
                 tooltip.style.display = 'block';
-                const op      = nodeOps[d.id];
-                const hint    = op
-                    ? `<br><em style="color:#22c55e">Green dot → generate &amp; copy: ${op.opName}</em>`
-                    : '';
+                const ops     = nodeOpsAll[d.id];
                 const reaches = nodeReachableFrom[d.id];
-                const viaLine = reaches && reaches.length
-                    ? `<br><span style="color:#f59e0b">Via: ${reaches.join(' &amp; ')}</span>`
-                    : '';
-                tooltip.innerHTML =
-                    `<strong>${d.id}</strong><br>Kind: ${d.kind}<br>Fields: ${d.fieldCount}` +
-                    (d.isRoot ? `<br>Root: ${d.rootKind}` : viaLine) +
-                    (d.description ? `<br><span style="color:#94a3b8">${d.description}</span>` : '') +
-                    hint;
+                tooltip.textContent = '';
+                const strong = document.createElement('strong');
+                strong.textContent = d.id;
+                tooltip.appendChild(strong);
+                const info = 'Kind: ' + d.kind + ' | Fields: ' + d.fieldCount +
+                    (d.isRoot ? ' | Root: ' + d.rootKind : '') +
+                    (d.description ? ' | ' + d.description : '');
+                tooltip.appendChild(document.createElement('br'));
+                tooltip.appendChild(document.createTextNode(info));
+                if (!d.isRoot && reaches && reaches.length) {
+                    const viaEl = document.createElement('span');
+                    viaEl.style.color = '#f59e0b';
+                    viaEl.textContent = 'Via: ' + reaches.join(' & ');
+                    tooltip.appendChild(document.createElement('br'));
+                    tooltip.appendChild(viaEl);
+                }
+                if (ops && ops.length) {
+                    const hintEl = document.createElement('em');
+                    hintEl.style.color = '#22c55e';
+                    hintEl.textContent = 'Green dot \u2192 generate query (' + ops.length + ' op' + (ops.length > 1 ? 's' : '') + ')';
+                    tooltip.appendChild(document.createElement('br'));
+                    tooltip.appendChild(hintEl);
+                }
             })
             .on('mousemove', e => {
                 const r = container.getBoundingClientRect();
@@ -505,21 +637,33 @@ document.addEventListener('DOMContentLoaded', function () {
                 .text(`…${extra} more fields`);
         }
 
-        // Green dot = click to generate (separate click target, stopPropagation)
-        if (nodeOps[d.id]) {
-            const op = nodeOps[d.id];
+        // Green dot = click to generate query (shown on all nodes reachable from roots)
+        const ops = nodeOpsAll[d.id];
+        if (ops && ops.length > 0) {
+            const btnX = hw - 9, btnY = -h / 2 + HEADER_H - 9;
+            // Invisible larger hit area for easier clicking at any zoom level
+            ng.append('circle')
+                .attr('cx', btnX).attr('cy', btnY)
+                .attr('r', 14).attr('fill', 'transparent')
+                .attr('cursor', 'pointer')
+                .on('click', function (e) {
+                    e.stopPropagation();
+                    if (!schemaId) return;
+                    if (ops.length === 1) {
+                        // Single operation — generate directly
+                        generateAndCopy(schemaId, ops[0].opName, ops[0].kind);
+                    } else {
+                        // Multiple operations — show picker menu
+                        showOpPicker(e.clientX, e.clientY, ops);
+                    }
+                });
+            // Visible green dot
             ng.append('circle')
                 .attr('class', 'gen-btn')
-                .attr('cx', hw - 9).attr('cy', -h / 2 + HEADER_H - 9)
-                .attr('r', 5).attr('fill', '#22c55e')
+                .attr('cx', btnX).attr('cy', btnY)
+                .attr('r', 6).attr('fill', '#22c55e')
                 .attr('stroke', '#0a0e14').attr('stroke-width', 1.5)
-                .attr('cursor', 'pointer')
-                .on('click', e => {
-                    e.stopPropagation();  // don't trigger focus
-                    if (schemaId) generateAndCopy(schemaId, op.opName, op.kind);
-                })
-                .on('mouseover', function () { d3.select(this).attr('r', 6.5).attr('fill', '#4ade80'); })
-                .on('mouseout',  function () { d3.select(this).attr('r', 5).attr('fill', '#22c55e'); });
+                .attr('pointer-events', 'none');
         }
     }
 
@@ -595,16 +739,20 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     rebindClick();
 
+    // Auto-fit on initial load so the full graph is visible
+    zoomToFit(500);
+
     // ── Global controls ───────────────────────────────────────────────────────
     window.resetZoom = function () {
-        svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity);
         render(filterData());
         rebindClick();
+        zoomToFit(400);
     };
 
     window.toggleScalars = function (checked) {
         showScalars = checked;
         render(filterData());
         rebindClick();
+        zoomToFit(400);
     };
 });

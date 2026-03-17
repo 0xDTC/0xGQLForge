@@ -83,7 +83,12 @@ func parseSelectionSet(tokens []string, pos int) ([]ParsedSelection, int) {
 			pos++
 			if pos < len(tokens) && tokens[pos] == "on" {
 				pos++ // skip "on"
-				pos++ // skip type name
+				if pos < len(tokens) {
+					pos++ // skip type name
+				}
+			} else if pos < len(tokens) && tokens[pos] != "{" {
+				// Named fragment spread (e.g. ...UserFields) — consume the name
+				pos++
 			}
 			if pos < len(tokens) && tokens[pos] == "{" {
 				pos++

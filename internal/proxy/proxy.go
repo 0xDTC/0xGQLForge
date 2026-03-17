@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"crypto/tls"
@@ -11,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,6 +113,13 @@ func (p *Proxy) SetProjectID(id string) {
 	p.mu.Unlock()
 }
 
+// GetProjectID returns the currently linked project ID.
+func (p *Proxy) GetProjectID() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.projectID
+}
+
 // Subscribe returns a channel that receives SSE events for new traffic.
 // The returned channel must be passed back to Unsubscribe when done.
 func (p *Proxy) Subscribe() <-chan []byte {
@@ -154,14 +163,10 @@ func (p *Proxy) serve(ln net.Listener) {
 func (p *Proxy) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	// Read the initial request to determine if it's a CONNECT tunnel or direct HTTP
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return
-	}
-
-	req, err := http.ReadRequest(newBufReader(buf[:n]))
+	// Wrap connection in a bufio.Reader so http.ReadRequest can handle
+	// requests of any size (not limited by a fixed buffer).
+	br := bufio.NewReader(conn)
+	req, err := http.ReadRequest(br)
 	if err != nil {
 		return
 	}
@@ -169,7 +174,7 @@ func (p *Proxy) handleConnection(conn net.Conn) {
 	if req.Method == "CONNECT" {
 		p.handleConnect(conn, req)
 	} else {
-		p.handleHTTP(conn, req)
+		p.handleHTTP(conn, req, br)
 	}
 }
 
@@ -198,22 +203,21 @@ func (p *Proxy) handleConnect(clientConn net.Conn, req *http.Request) {
 	}
 	defer tlsConn.Close()
 
-	// Read decrypted HTTP requests from the TLS connection
+	// Read decrypted HTTP requests from the TLS connection.
+	// CRITICAL: Reuse a single bufio.Reader for the entire tunnel.
+	// Creating a new one per request loses buffered bytes, corrupting
+	// subsequent requests on the same keep-alive connection.
+	tlsBuf := bufio.NewReader(tlsConn)
 	for {
 		tlsConn.SetReadDeadline(time.Now().Add(30 * time.Second))
-		innerReq, err := http.ReadRequest(newBufReaderFromConn(tlsConn))
+		innerReq, err := http.ReadRequest(tlsBuf)
 		if err != nil {
 			return
 		}
 
 		// Set the full URL since inner requests only have relative paths
 		innerReq.URL.Scheme = "https"
-		host := req.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			innerReq.URL.Host = h
-		} else {
-			innerReq.URL.Host = host
-		}
+		innerReq.URL.Host = req.Host // keep original host:port for non-standard ports
 		innerReq.RequestURI = ""
 
 		p.forwardAndCapture(tlsConn, innerReq)
@@ -221,7 +225,7 @@ func (p *Proxy) handleConnect(clientConn net.Conn, req *http.Request) {
 }
 
 // handleHTTP handles plain HTTP requests (non-CONNECT).
-func (p *Proxy) handleHTTP(clientConn net.Conn, req *http.Request) {
+func (p *Proxy) handleHTTP(clientConn net.Conn, req *http.Request, _ *bufio.Reader) {
 	if req.URL.Scheme == "" {
 		req.URL.Scheme = "http"
 	}
@@ -248,6 +252,12 @@ func (p *Proxy) forwardAndCapture(clientConn net.Conn, req *http.Request) {
 
 	resp, err := p.client.Do(req)
 	if err != nil {
+		// Drain any unconsumed request body to keep the stream in sync
+		// for subsequent requests on the same keep-alive connection.
+		if req.Body != nil {
+			io.Copy(io.Discard, req.Body)
+			req.Body.Close()
+		}
 		errResp := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"
 		if _, werr := clientConn.Write([]byte(errResp)); werr != nil {
 			log.Printf("write 502 to client: %v", werr)
@@ -260,12 +270,22 @@ func (p *Proxy) forwardAndCapture(clientConn net.Conn, req *http.Request) {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("read response body: %v", err)
+		// Send 502 on read failure rather than forwarding truncated body
+		errResp := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"
+		clientConn.Write([]byte(errResp))
+		return
 	}
 
-	// Write response back to client
+	// Write response back to client.
+	// Use resp.Status (e.g. "200 OK") which already includes the code.
+	// Strip Transfer-Encoding and Content-Length since we re-buffer the body.
 	var respBuf bytes.Buffer
-	respBuf.WriteString(fmt.Sprintf("HTTP/1.1 %d %s\r\n", resp.StatusCode, resp.Status))
+	respBuf.WriteString(fmt.Sprintf("HTTP/1.1 %s\r\n", resp.Status))
 	for k, vals := range resp.Header {
+		kl := strings.ToLower(k)
+		if kl == "transfer-encoding" || kl == "content-length" {
+			continue
+		}
 		for _, v := range vals {
 			respBuf.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
 		}
@@ -277,15 +297,24 @@ func (p *Proxy) forwardAndCapture(clientConn net.Conn, req *http.Request) {
 		log.Printf("write response to client: %v", err)
 	}
 
-	// If this is a GraphQL request, capture it
-	if isGQL && payload != nil && payload.Query != "" {
+	// Capture GraphQL traffic.
+	// Primary path: request detected as GQL and payload extracted.
+	// Fallback: response looks like GraphQL (has "data"/"errors" fields)
+	// even if the request wasn't detected — catches non-standard endpoints.
+	if isGQL && payload != nil && (payload.Query != "" || payload.DocID != "") {
 		p.captureTraffic(req, payload, resp.StatusCode, respBody)
+	} else if !isGQL && resp.StatusCode == 200 && DetectGraphQLResponse(respBody) {
+		// Response-based fallback: capture unknown endpoints that return GQL responses
+		payload = tryExtractPayloadRetroactive(req)
+		if payload != nil {
+			p.captureTraffic(req, payload, resp.StatusCode, respBody)
+		}
 	}
 }
 
 func (p *Proxy) captureTraffic(req *http.Request, payload *graphqlPayload, statusCode int, respBody []byte) {
 	opName := payload.OperationName
-	if opName == "" {
+	if opName == "" && payload.Query != "" {
 		opName = ExtractOperationName(payload.Query)
 	}
 
@@ -298,6 +327,15 @@ func (p *Proxy) captureTraffic(req *http.Request, payload *graphqlPayload, statu
 	projID := p.projectID
 	p.mu.Unlock()
 
+	// For persisted queries (doc_id/query_hash), store the ID as the query
+	// so the traffic entry isn't blank.
+	query := payload.Query
+	if query == "" && payload.DocID != "" {
+		query = "# persisted query doc_id=" + payload.DocID
+	} else if query == "" && payload.QueryHash != "" {
+		query = "# persisted query query_hash=" + payload.QueryHash
+	}
+
 	captured := &schema.CapturedRequest{
 		ID:            generateTrafficID(),
 		Timestamp:     time.Now().UTC(),
@@ -306,7 +344,7 @@ func (p *Proxy) captureTraffic(req *http.Request, payload *graphqlPayload, statu
 		Host:          req.Host,
 		Headers:       headers,
 		OperationName: opName,
-		Query:         payload.Query,
+		Query:         query,
 		Variables:     payload.Variables,
 		ResponseCode:  statusCode,
 		ResponseBody:  respBody,

@@ -68,13 +68,16 @@ func (h *Handlers) ProxyStop(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ProxyStatus(w http.ResponseWriter, r *http.Request) {
 	running := false
 	addr := ""
+	projectID := ""
 	if h.proxyCtrl != nil {
 		running = h.proxyCtrl.Running()
 		addr = h.proxyCtrl.Addr()
+		projectID = h.proxyCtrl.GetProjectID()
 	}
 	jsonResp(w, http.StatusOK, map[string]any{
-		"running": running,
-		"addr":    addr,
+		"running":   running,
+		"addr":      addr,
+		"projectId": projectID,
 	})
 }
 
@@ -104,24 +107,28 @@ func (h *Handlers) ProxySetProject(w http.ResponseWriter, r *http.Request) {
 
 // ProxySSE streams new traffic events via Server-Sent Events.
 func (h *Handlers) ProxySSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
 	if h.proxyCtrl == nil {
 		// Tell EventSource to retry in 5 s rather than hammering us
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		fmt.Fprintf(w, "retry: 5000\n\n")
+		flusher.Flush()
 		return
 	}
 
 	if !h.proxyCtrl.Running() {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
-		fmt.Fprintf(w, "retry: 5000\n\n")
-		return
-	}
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		// Send an explicit status event so the client knows the proxy isn't running,
+		// then close so EventSource fires onerror and the client can retry later.
+		fmt.Fprintf(w, "event: status\ndata: {\"running\":false}\n\n")
+		flusher.Flush()
 		return
 	}
 
@@ -132,6 +139,11 @@ func (h *Handlers) ProxySSE(w http.ResponseWriter, r *http.Request) {
 	ch := h.proxyCtrl.Subscribe()
 	defer h.proxyCtrl.Unsubscribe(ch)
 
+	// Send a heartbeat comment every 15s to keep the connection alive
+	// through proxies and load balancers that close idle connections.
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case data, ok := <-ch:
@@ -139,6 +151,9 @@ func (h *Handlers) ProxySSE(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-ticker.C:
+			fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
 		case <-r.Context().Done():
 			return

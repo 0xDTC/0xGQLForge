@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/0xDTC/0xGQLForge/internal/handler"
 	"github.com/0xDTC/0xGQLForge/internal/proxy"
@@ -87,8 +88,9 @@ func main() {
 
 		fmt.Println("\nShutting down...")
 		p.Stop()
-		srv.Shutdown(context.Background())
-		db.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
 		os.Exit(0)
 	}()
 

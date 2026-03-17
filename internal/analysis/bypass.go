@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -104,14 +105,11 @@ func TryBypass(targetURL string) []schema.BypassResult {
 
 		if t.method == "GET" {
 			gqlQuery := `{ __schema { queryType { name } types { name kind } } }`
-			url := targetURL + "?query=" + gqlQuery
-			req, err = http.NewRequest("GET", url, nil)
+			reqURL := targetURL + "?query=" + url.QueryEscape(gqlQuery)
+			req, err = http.NewRequest("GET", reqURL, nil)
 			result.Payload = gqlQuery
 		} else {
 			req, err = http.NewRequest("POST", targetURL, bytes.NewBufferString(t.payload))
-			if t.ct != "" {
-				req.Header.Set("Content-Type", t.ct)
-			}
 		}
 
 		if err != nil {
@@ -120,6 +118,9 @@ func TryBypass(targetURL string) []schema.BypassResult {
 			continue
 		}
 
+		if t.ct != "" {
+			req.Header.Set("Content-Type", t.ct)
+		}
 		req.Header.Set("Accept", "application/json")
 
 		resp, err := client.Do(req)

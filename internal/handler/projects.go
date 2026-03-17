@@ -57,7 +57,10 @@ func (h *Handlers) ProjectDelete(w http.ResponseWriter, r *http.Request) {
 
 // ProjectsList renders the projects overview page.
 func (h *Handlers) ProjectsList(w http.ResponseWriter, r *http.Request) {
-	projects, _ := h.ProjectRepo.List()
+	projects, err := h.ProjectRepo.List()
+	if err != nil {
+		log.Printf("list projects: %v", err)
+	}
 	data := map[string]any{
 		"Title":    "Projects",
 		"Projects": projects,

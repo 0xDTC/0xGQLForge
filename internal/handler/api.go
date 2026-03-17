@@ -3,7 +3,9 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
@@ -79,9 +81,11 @@ func (h *Handlers) DiffSchemas(w http.ResponseWriter, r *http.Request) {
 	jsonErr(w, http.StatusNotImplemented, "schema diff not yet implemented")
 }
 
-// generateID creates a random hex ID.
+// generateID creates a random hex ID with a timestamp fallback.
 func generateID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("id_%d", time.Now().UnixNano())
+	}
 	return hex.EncodeToString(b)
 }

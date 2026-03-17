@@ -171,13 +171,22 @@ function setProxyRunning(running, addr) {
 }
 
 // ── SSE: connect once proxy is running, auto-close on stop ────────────────
+let sseRetryTimer = null;
+
 function connectSSE() {
     if (sseSource) { sseSource.close(); sseSource = null; }
+    if (sseRetryTimer) { clearTimeout(sseRetryTimer); sseRetryTimer = null; }
+
     const src = new EventSource('/api/proxy/sse');
+    src.onopen = () => {
+        console.log('[SSE] connected');
+    };
     src.onmessage = e => {
         try {
             const req = JSON.parse(e.data);
             if (!req || !req.id) return;
+            // Deduplicate: skip if already in the array
+            if (allTraffic.some(t => t.id === req.id)) return;
             allTraffic.unshift(req);
             buildOptions();
             renderTable();
@@ -191,7 +200,19 @@ function connectSSE() {
             });
         } catch (_) {}
     };
-    src.onerror = () => {};
+    src.onerror = () => {
+        // EventSource auto-reconnects, but if the proxy was stopped the
+        // server returns retry:5000 and closes — so we stop retrying.
+        src.close();
+        sseSource = null;
+        console.log('[SSE] disconnected, will retry in 3s');
+        sseRetryTimer = setTimeout(() => {
+            // Only reconnect if proxy is still shown as running
+            fetch('/api/proxy/status').then(r => r.json()).then(s => {
+                if (s.running) connectSSE();
+            }).catch(() => {});
+        }, 3000);
+    };
     sseSource = src;
 }
 
@@ -219,22 +240,30 @@ function stopProxy() {
         .then(() => {
             setProxyRunning(false, '');
             if (sseSource) { sseSource.close(); sseSource = null; }
+            if (sseRetryTimer) { clearTimeout(sseRetryTimer); sseRetryTimer = null; }
         });
 }
 
 // ── Project dropdown ──────────────────────────────────────────────────────
-function loadProjects() {
-    fetch('/api/projects')
-        .then(r => r.json())
-        .then(projects => {
-            const sel = document.getElementById('project-select');
-            const cur = sel.value;
-            sel.innerHTML = '<option value="">&#8212; None &#8212;</option>' +
-                (projects || []).map(p =>
-                    `<option value="${escA(p.id)}"${p.id === cur ? ' selected' : ''}>${escA(p.name)}</option>`
-                ).join('');
-        })
-        .catch(() => {});
+async function loadProjects() {
+    try {
+        const projects = await fetch('/api/projects').then(r => r.json());
+        const sel = document.getElementById('project-select');
+        const cur = sel.value;
+        // Clear and rebuild options using DOM API
+        while (sel.options.length > 0) sel.remove(0);
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = '\u2014 None \u2014';
+        sel.appendChild(none);
+        (projects || []).forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.name;
+            if (p.id === cur) opt.selected = true;
+            sel.appendChild(opt);
+        });
+    } catch (_) {}
 }
 
 function applyProject() {
@@ -258,12 +287,20 @@ function applyProject() {
 
 // ── Load initial traffic + status ─────────────────────────────────────────
 async function init() {
+    let proxyRunning = false;
+    let proxyAddr = '';
+    let proxyProjectId = '';
+
     try {
         const s = await fetch('/api/proxy/status').then(r => r.json());
-        setProxyRunning(s.running, s.addr);
-        if (s.running) connectSSE();
+        proxyRunning = s.running;
+        proxyAddr = s.addr;
+        proxyProjectId = s.projectId || '';
+        setProxyRunning(proxyRunning, proxyAddr);
     } catch (_) {}
 
+    // Load historical traffic FIRST, before connecting SSE,
+    // so new events don't get overwritten by the initial fetch.
     try {
         const data = await fetch('/api/proxy/traffic?limit=2000').then(r => r.json());
         allTraffic = Array.isArray(data) ? data : [];
@@ -271,7 +308,35 @@ async function init() {
 
     buildOptions();
     renderTable();
-    loadProjects();
+
+    // Load projects, then restore the active project selection from proxy status.
+    await loadProjects();
+    if (proxyProjectId) {
+        const sel = document.getElementById('project-select');
+        sel.value = proxyProjectId;
+        const name = sel.options[sel.selectedIndex]
+            ? sel.options[sel.selectedIndex].text : '';
+        const lbl = document.getElementById('proxy-project-label');
+        if (name && name !== '\u2014 None \u2014') {
+            lbl.textContent = name;
+            lbl.style.display = '';
+        }
+    }
+
+    // Check URL params — if coming from a project page with ?project=ID
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlProject = urlParams.get('project');
+    if (urlProject && !proxyProjectId) {
+        const sel = document.getElementById('project-select');
+        sel.value = urlProject;
+        if (sel.value === urlProject) {
+            // Auto-apply the project
+            applyProject();
+        }
+    }
+
+    // NOW connect SSE — any new events will be deduplicated and prepended.
+    if (proxyRunning) connectSSE();
 }
 init();
 

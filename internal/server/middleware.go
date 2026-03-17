@@ -29,6 +29,14 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
+// Flush delegates to the underlying ResponseWriter if it supports flushing.
+// This is required for SSE (Server-Sent Events) to work through the logging middleware.
+func (w *responseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // logging logs each HTTP request with method, path, status, and duration.
 func logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

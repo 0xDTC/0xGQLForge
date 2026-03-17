@@ -55,11 +55,34 @@
 </div>
 {{end}}
 
+<!-- ── Proxy controls ──────────────────────────────────────────────────── -->
+<div class="card" style="margin-bottom:1rem">
+    <div class="card-header">
+        <h2>Proxy</h2>
+        <span id="proj-proxy-badge" class="badge badge-inactive">Checking…</span>
+    </div>
+    <div class="card-body">
+        <div style="display:flex;align-items:center;gap:.65rem;flex-wrap:wrap">
+            <button id="proj-proxy-start" class="btn btn-primary" onclick="projStartProxy()" style="display:none">
+                Start Proxy for This Project
+            </button>
+            <button id="proj-proxy-stop" class="btn btn-danger" onclick="projStopProxy()" style="display:none">
+                Stop Proxy
+            </button>
+            <a id="proj-proxy-link" href="/proxy" class="btn" style="display:none">Open Proxy Page</a>
+            <span id="proj-proxy-other" style="display:none;color:var(--text-muted);font-size:.85rem"></span>
+        </div>
+        <p style="color:var(--text-muted);font-size:.8rem;margin:.5rem 0 0">
+            Start the MITM proxy linked to this project. All captured GraphQL traffic will be saved here.
+        </p>
+    </div>
+</div>
+
 <!-- ── Traffic table ───────────────────────────────────────────────────── -->
 <div class="card">
     <div class="card-header">
         <h2>Captured Traffic</h2>
-        <span class="badge">{{len .Traffic}} requests</span>
+        <span id="traffic-badge" class="badge">{{len .Traffic}} requests</span>
     </div>
     {{if .Traffic}}
     <div class="traffic-scroll">
@@ -118,6 +141,74 @@
 {{end}}
 
 <script>
+const PROJECT_ID = '{{.Project.ID}}';
+const PROJECT_NAME = '{{.Project.Name}}';
+
+// ── Proxy controls for this project ──────────────────────────────────────
+function projUpdateUI(running, addr, linkedProject) {
+    const badge  = document.getElementById('proj-proxy-badge');
+    const btnOn  = document.getElementById('proj-proxy-start');
+    const btnOff = document.getElementById('proj-proxy-stop');
+    const link   = document.getElementById('proj-proxy-link');
+    const other  = document.getElementById('proj-proxy-other');
+
+    btnOn.style.display = 'none';
+    btnOff.style.display = 'none';
+    link.style.display = 'none';
+    other.style.display = 'none';
+
+    if (!running) {
+        badge.className = 'badge badge-inactive';
+        badge.textContent = 'Stopped';
+        btnOn.style.display = '';
+    } else if (linkedProject === PROJECT_ID) {
+        badge.className = 'badge badge-active';
+        badge.textContent = 'Running on ' + (addr || ':8888');
+        btnOff.style.display = '';
+        link.style.display = '';
+    } else {
+        badge.className = 'badge';
+        badge.textContent = 'Running (other project)';
+        other.style.display = '';
+        other.textContent = 'Proxy is linked to another project. Stop it first or open the proxy page.';
+        link.style.display = '';
+    }
+}
+
+async function projCheckStatus() {
+    try {
+        const s = await fetch('/api/proxy/status').then(r => r.json());
+        projUpdateUI(s.running, s.addr, s.projectId);
+    } catch (_) {
+        projUpdateUI(false, '', '');
+    }
+}
+
+function projStartProxy() {
+    const btn = document.getElementById('proj-proxy-start');
+    btn.disabled = true;
+    fetch('/api/proxy/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+        .then(r => r.json())
+        .then(d => {
+            btn.disabled = false;
+            if (d.error) { alert(d.error); return; }
+            // Link to this project
+            return fetch('/api/proxy/project', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ projectId: PROJECT_ID }),
+            }).then(() => projCheckStatus());
+        })
+        .catch(e => { btn.disabled = false; alert(e.message); });
+}
+
+function projStopProxy() {
+    fetch('/api/proxy/stop', { method: 'POST' })
+        .then(() => projCheckStatus());
+}
+
+projCheckStatus();
+
 function inferSchema(projectId) {
     const btn = event.target;
     btn.disabled = true;

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"html/template"
+	"log"
 	"net/http"
 	"strings"
 
@@ -29,6 +31,7 @@ type ProxyController interface {
 	Subscribe() <-chan []byte
 	Unsubscribe(<-chan []byte)
 	SetProjectID(string)
+	GetProjectID() string
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -53,21 +56,26 @@ func (h *Handlers) SetProxyController(ctrl ProxyController) {
 
 // render executes a named template with the given data.
 // Page templates are executed via "layout.html"; partials are executed directly.
+// Renders to a buffer first so partial writes don't corrupt the response on error.
 func (h *Handlers) render(w http.ResponseWriter, name string, data any) {
 	t, ok := h.tmpls[name]
 	if !ok {
 		http.Error(w, "Template not found: "+name, http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// Page templates are rooted at "layout.html"; partials use their own name.
 	execName := "layout.html"
 	if strings.HasPrefix(name, "partials/") {
 		execName = name
 	}
-	if err := t.ExecuteTemplate(w, execName, data); err != nil {
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, execName, data); err != nil {
+		log.Printf("template %s error: %v", name, err)
 		http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	buf.WriteTo(w)
 }
 
 // jsonResp writes a JSON response with the given status code.

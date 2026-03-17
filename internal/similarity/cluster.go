@@ -3,10 +3,12 @@ package similarity
 import (
 	"encoding/json"
 	"fmt"
-	"time"
+	"sync/atomic"
 
 	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
+
+var clusterSeq atomic.Int64
 
 // ClusterQueries groups captured requests by their structural fingerprint.
 func ClusterQueries(requests []schema.CapturedRequest) []schema.QueryCluster {
@@ -22,7 +24,7 @@ func ClusterQueries(requests []schema.CapturedRequest) []schema.QueryCluster {
 		cluster, exists := groups[fp]
 		if !exists {
 			cluster = &schema.QueryCluster{
-				ID:          fmt.Sprintf("cluster_%d", time.Now().UnixNano()),
+				ID:          fmt.Sprintf("cluster_%d", clusterSeq.Add(1)),
 				Fingerprint: fp,
 			}
 			groups[fp] = cluster
@@ -74,7 +76,9 @@ func analyzeVariablePatterns(queries []schema.CapturedRequest) (common, varying 
 	}
 
 	for key, values := range allKeys {
-		if allSame(values) {
+		// Require at least 2 observations to classify as common (invariant).
+		// A variable seen only once cannot be determined to be common.
+		if len(values) >= 2 && allSame(values) {
 			common = append(common, key)
 		} else {
 			varying = append(varying, key)

@@ -1,10 +1,16 @@
 package handler
 
-import "net/http"
+import (
+	"log"
+	"net/http"
+)
 
 // SchemasList renders the schemas management page (home page).
 func (h *Handlers) SchemasList(w http.ResponseWriter, r *http.Request) {
-	schemas, _ := h.SchemaRepo.List()
+	schemas, err := h.SchemaRepo.List()
+	if err != nil {
+		log.Printf("list schemas: %v", err)
+	}
 	data := map[string]any{
 		"Title":   "Schemas",
 		"Schemas": schemas,

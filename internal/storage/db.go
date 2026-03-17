@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -13,7 +12,6 @@ import (
 // DB wraps a SQLite connection with application-level helpers.
 type DB struct {
 	conn *sql.DB
-	mu   sync.RWMutex
 }
 
 // New opens (or creates) a SQLite database at the given path.

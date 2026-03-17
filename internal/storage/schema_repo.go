@@ -95,10 +95,30 @@ func (r *SchemaRepo) List() ([]schema.Schema, error) {
 	return schemas, rows.Err()
 }
 
-// Delete removes a schema by ID.
+// Delete removes a schema and all referencing rows (analysis, diffs, traffic, projects).
 func (r *SchemaRepo) Delete(id string) error {
-	_, err := r.db.conn.Exec("DELETE FROM schemas WHERE id = ?", id)
-	return err
+	tx, err := r.db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin delete tx: %w", err)
+	}
+	// Clear FK references before deleting the schema.
+	stmts := []struct {
+		sql  string
+		args []any
+	}{
+		{"DELETE FROM analysis_results WHERE schema_id = ?", []any{id}},
+		{"DELETE FROM schema_diffs WHERE schema_a_id = ? OR schema_b_id = ?", []any{id, id}},
+		{"UPDATE traffic SET schema_id = NULL WHERE schema_id = ?", []any{id}},
+		{"UPDATE projects SET schema_id = NULL WHERE schema_id = ?", []any{id}},
+		{"DELETE FROM schemas WHERE id = ?", []any{id}},
+	}
+	for _, s := range stmts {
+		if _, err := tx.Exec(s.sql, s.args...); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("delete schema cascade: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 // Count returns the total number of stored schemas.
@@ -121,13 +141,18 @@ func NewTrafficRepo(db *DB) *TrafficRepo {
 // Save stores a captured request.
 func (r *TrafficRepo) Save(req *schema.CapturedRequest) error {
 	headers, _ := json.Marshal(req.Headers)
+	// Store nil Variables as SQL NULL rather than empty string.
+	var varsParam any
+	if len(req.Variables) > 0 {
+		varsParam = string(req.Variables)
+	}
 	_, err := r.db.conn.Exec(
 		`INSERT INTO traffic (id, timestamp, method, url, host, headers_json,
 		  operation_name, query, variables_json, response_code, response_body,
 		  fingerprint, cluster_id, schema_id, project_id)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		req.ID, req.Timestamp, req.Method, req.URL, req.Host, string(headers),
-		req.OperationName, req.Query, string(req.Variables),
+		req.OperationName, req.Query, varsParam,
 		req.ResponseCode, req.ResponseBody,
 		req.Fingerprint, req.ClusterID, req.SchemaID, req.ProjectID,
 	)

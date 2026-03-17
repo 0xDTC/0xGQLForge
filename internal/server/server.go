@@ -52,9 +52,11 @@ func New(cfg Config, db *storage.DB, handlers *handler.Handlers) (*Server, error
 	s.httpSrv = &http.Server{
 		Addr:         cfg.Addr,
 		Handler:      chain(mux, recovery, logging),
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout: 30 * time.Second,
+		// WriteTimeout is 0 (disabled) to support long-lived SSE connections.
+		// Individual non-SSE handlers are protected by the read timeout and
+		// the client-side context cancellation.
+		IdleTimeout: 120 * time.Second,
 	}
 
 	return s, nil

@@ -120,52 +120,53 @@ func normalizeWhitespace(s string) string {
 }
 
 // sortSelections sorts field names within curly brace blocks for consistent fingerprinting.
+// Uses a stack to handle nested selection sets correctly.
 func sortSelections(s string) string {
-	// Split by { and sort contents within each block
-	// This is a simplified approach — handles flat field lists
 	var result strings.Builder
-	depth := 0
-	var currentFields []string
+	// Stack of field lists, one per nesting depth.
+	var stack [][]string
 	var currentField strings.Builder
+
+	flushField := func() {
+		if currentField.Len() > 0 {
+			field := strings.TrimSpace(currentField.String())
+			if field != "" && len(stack) > 0 {
+				stack[len(stack)-1] = append(stack[len(stack)-1], field)
+			} else if field != "" {
+				// Outside any braces — write directly
+				result.WriteString(field)
+			}
+			currentField.Reset()
+		}
+	}
 
 	for _, ch := range s {
 		switch ch {
 		case '{':
-			if currentField.Len() > 0 {
-				result.WriteString(currentField.String())
-				currentField.Reset()
-			}
+			flushField()
 			result.WriteRune('{')
-			depth++
+			stack = append(stack, []string{})
 		case '}':
-			if currentField.Len() > 0 {
-				currentFields = append(currentFields, strings.TrimSpace(currentField.String()))
-				currentField.Reset()
-			}
-			if len(currentFields) > 0 {
-				sort.Strings(currentFields)
-				result.WriteString(strings.Join(currentFields, " "))
-				currentFields = nil
+			flushField()
+			if len(stack) > 0 {
+				top := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				sort.Strings(top)
+				result.WriteString(strings.Join(top, " "))
 			}
 			result.WriteRune('}')
-			depth--
-		default:
-			if depth > 0 && ch == ' ' && currentField.Len() > 0 {
-				field := strings.TrimSpace(currentField.String())
-				if field != "" {
-					currentFields = append(currentFields, field)
-				}
-				currentField.Reset()
+		case ' ':
+			if len(stack) > 0 {
+				flushField()
 			} else {
 				currentField.WriteRune(ch)
 			}
+		default:
+			currentField.WriteRune(ch)
 		}
 	}
 
-	if currentField.Len() > 0 {
-		result.WriteString(currentField.String())
-	}
-
+	flushField()
 	return result.String()
 }
 
