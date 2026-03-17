@@ -145,10 +145,18 @@ func ExtractOperationName(query string) string {
 	query = strings.TrimSpace(query)
 
 	// Look for named operations: query Foo, mutation Bar, subscription Baz
+	// Only match keywords at position 0 or preceded by whitespace to avoid
+	// false matches inside string literal values like { search(q: "mutation foo") }.
 	for _, prefix := range []string{"query ", "mutation ", "subscription "} {
 		idx := strings.Index(query, prefix)
 		if idx < 0 {
 			continue
+		}
+		if idx > 0 {
+			prev := query[idx-1]
+			if prev != ' ' && prev != '\n' && prev != '\r' && prev != '\t' && prev != ',' {
+				continue
+			}
 		}
 		rest := query[idx+len(prefix):]
 		// Read until ( or { or whitespace

@@ -113,6 +113,10 @@ func (h *Handlers) ProxySetProject(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
 	h.proxyCtrl.SetProjectID(body.ProjectID)
+	// Save the proxy address to the project record so it shows in the projects list.
+	if body.ProjectID != "" {
+		h.ProjectRepo.UpdateProxyAddr(body.ProjectID, h.proxyCtrl.Addr()) //nolint:errcheck
+	}
 	jsonResp(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

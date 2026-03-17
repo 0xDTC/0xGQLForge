@@ -151,7 +151,7 @@ func expandFields(b *strings.Builder, t *schema.Type, typeIndex map[string]*sche
 					continue
 				}
 				b.WriteString(fmt.Sprintf("%s    ... on %s {\n", indent, ptName))
-				expandFields(b, pt, typeIndex, cfg, depth+2, visited)
+				expandFields(b, pt, typeIndex, cfg, depth+1, visited)
 				b.WriteString(fmt.Sprintf("%s    }\n", indent))
 			}
 			b.WriteString(fmt.Sprintf("%s}\n", indent))

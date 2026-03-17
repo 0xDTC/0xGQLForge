@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -80,7 +82,10 @@ func main() {
 		log.Fatalf("init server: %v", err)
 	}
 
-	// Graceful shutdown
+	// Graceful shutdown — wait for Shutdown to complete before exiting
+	// so in-flight requests (including SSE streams) drain properly and
+	// deferred cleanup (db.Close) runs.
+	shutdownDone := make(chan struct{})
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -89,9 +94,11 @@ func main() {
 		fmt.Println("\nShutting down...")
 		p.Stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		srv.Shutdown(ctx)
-		os.Exit(0)
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("shutdown error: %v", err)
+		}
+		cancel()
+		close(shutdownDone)
 	}()
 
 	fmt.Print(`
@@ -108,7 +115,8 @@ func main() {
 	fmt.Printf("  Database:  %s\n", filepath.Join(configDir, "gqlforge.db"))
 	fmt.Println()
 
-	if err := srv.Start(); err != nil && err.Error() != "http: Server closed" {
+	if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
 	}
+	<-shutdownDone
 }

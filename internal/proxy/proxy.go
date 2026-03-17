@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/0xDTC/0xGQLForge/internal/schema"
@@ -28,7 +30,7 @@ type Proxy struct {
 	listener    net.Listener
 	running     bool
 	projectID   string
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	subs        map[chan []byte]struct{}
 	subsMu      sync.RWMutex
 	client      *http.Client
@@ -95,9 +97,11 @@ func (p *Proxy) Stop() error {
 }
 
 // Running returns whether the proxy is active.
+// Uses RLock to avoid deadlocking with Stop() which holds the write lock
+// while closing the listener (which unblocks serve → Running check).
 func (p *Proxy) Running() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.running
 }
 
@@ -115,8 +119,8 @@ func (p *Proxy) SetProjectID(id string) {
 
 // GetProjectID returns the currently linked project ID.
 func (p *Proxy) GetProjectID() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.projectID
 }
 
@@ -198,7 +202,12 @@ func (p *Proxy) handleConnect(clientConn net.Conn, req *http.Request) {
 	}
 	tlsConn := tls.Server(clientConn, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
-		log.Printf("TLS handshake error for %s: %v", req.Host, err)
+		// Clients that don't trust our CA will reject the handshake — this
+		// is expected (e.g. Chrome Safe Browsing, certificate pinning).
+		// Only log truly unexpected TLS errors.
+		if !isConnClosed(err) {
+			log.Printf("TLS handshake error for %s: %v", req.Host, err)
+		}
 		return
 	}
 	defer tlsConn.Close()
@@ -214,6 +223,9 @@ func (p *Proxy) handleConnect(clientConn net.Conn, req *http.Request) {
 		if err != nil {
 			return
 		}
+		// Clear the deadline so forwardAndCapture can take as long as
+		// the upstream needs. A new deadline is set on the next iteration.
+		tlsConn.SetReadDeadline(time.Time{})
 
 		// Set the full URL since inner requests only have relative paths
 		innerReq.URL.Scheme = "https"
@@ -260,7 +272,9 @@ func (p *Proxy) forwardAndCapture(clientConn net.Conn, req *http.Request) {
 		}
 		errResp := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"
 		if _, werr := clientConn.Write([]byte(errResp)); werr != nil {
-			log.Printf("write 502 to client: %v", werr)
+			if !isConnClosed(werr) {
+				log.Printf("write 502 to client: %v", werr)
+			}
 		}
 		return
 	}
@@ -294,7 +308,12 @@ func (p *Proxy) forwardAndCapture(clientConn net.Conn, req *http.Request) {
 	respBuf.WriteString("\r\n")
 	respBuf.Write(respBody)
 	if _, err := clientConn.Write(respBuf.Bytes()); err != nil {
-		log.Printf("write response to client: %v", err)
+		// Broken pipe / connection reset are normal — the client closed
+		// before we finished writing (navigation, cancellation, HTTP/2).
+		// Only log unexpected write errors.
+		if !isConnClosed(err) {
+			log.Printf("write response to client: %v", err)
+		}
 	}
 
 	// Capture GraphQL traffic.
@@ -377,6 +396,23 @@ func (p *Proxy) broadcast(req *schema.CapturedRequest) {
 			// Drop if subscriber is slow
 		}
 	}
+}
+
+// isConnClosed returns true for errors that indicate the peer closed the
+// connection (broken pipe, connection reset, EOF, TLS alerts). These are
+// normal in a MITM proxy and don't warrant log noise.
+func isConnClosed(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+	s := err.Error()
+	return strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "use of closed") ||
+		strings.Contains(s, "tls:") // TLS alert from client rejecting our CA
 }
 
 func generateTrafficID() string {

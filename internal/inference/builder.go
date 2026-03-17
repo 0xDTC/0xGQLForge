@@ -74,9 +74,25 @@ func BuildFromTraffic(reqs []schema.CapturedRequest, projectName string) *schema
 
 		// Fallback: if we got nothing from the response, at least record
 		// the operation name so it appears in the schema.
+		// Use a descriptive return type name based on the operation.
 		if len(rootFields) == 0 && req.OperationName != "" {
 			if _, ok := bucket[req.OperationName]; !ok {
-				bucket[req.OperationName] = schema.Field{Name: req.OperationName, Type: unknownRef()}
+				retTypeName := pascalCase(req.OperationName) + "Response"
+				bucket[req.OperationName] = schema.Field{
+					Name: req.OperationName,
+					Type: objectRef(retTypeName),
+				}
+				// Create a placeholder type so the graph has a node to link to.
+				if _, exists := typeMap[retTypeName]; !exists {
+					typeMap[retTypeName] = schema.Type{
+						Name:        retTypeName,
+						Kind:        schema.KindObject,
+						Description: "Inferred return type (no response data available)",
+						Fields: []schema.Field{
+							{Name: "data", Type: unknownRef()},
+						},
+					}
+				}
 			}
 		}
 	}
@@ -155,14 +171,37 @@ func inferFromResponse(body json.RawMessage) (rootFields []schema.Field, types m
 	var resp struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if err := json.Unmarshal(body, &resp); err != nil || len(resp.Data) == 0 || string(resp.Data) == "null" {
+	if err := json.Unmarshal(body, &resp); err != nil {
 		return
 	}
 
+	rawData := resp.Data
+	// Some APIs return data directly without a "data" wrapper.
+	// If "data" is missing/null, try the top-level object itself
+	// (but only if it looks like an object, not an error response).
+	if len(rawData) == 0 || string(rawData) == "null" {
+		var topLevel map[string]json.RawMessage
+		if err := json.Unmarshal(body, &topLevel); err != nil {
+			return
+		}
+		// Skip if this looks like an error response
+		if _, hasErrors := topLevel["errors"]; hasErrors && len(topLevel) <= 2 {
+			return
+		}
+		// Skip if the only keys are "data" and/or "errors" (standard GQL envelope)
+		if _, hasData := topLevel["data"]; hasData || len(topLevel) == 0 {
+			return
+		}
+		rawData = body
+	}
+
 	var data map[string]json.RawMessage
-	if err := json.Unmarshal(resp.Data, &data); err != nil {
+	if err := json.Unmarshal(rawData, &data); err != nil {
 		return
 	}
+	// Remove standard GraphQL envelope keys from top-level inference.
+	delete(data, "errors")
+	delete(data, "extensions")
 
 	for fieldName, value := range data {
 		typeRef := inferTypeRef(fieldName, value, types)
@@ -264,7 +303,7 @@ func parseOpKind(query string) string {
 
 func isIDField(name string) bool {
 	lower := strings.ToLower(name)
-	return lower == "id" || strings.HasSuffix(lower, "id") || strings.HasSuffix(lower, "_id")
+	return lower == "id" || strings.HasSuffix(lower, "_id") || strings.HasSuffix(lower, "Id")
 }
 
 // pascalCase capitalises the first letter: "userProfile" → "UserProfile".
@@ -304,7 +343,7 @@ func listRef(of schema.TypeRef) schema.TypeRef {
 }
 
 func unknownRef() schema.TypeRef {
-	n := "String"
+	n := "JSON"
 	return schema.TypeRef{Kind: schema.KindScalar, Name: &n}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -55,7 +56,13 @@ var DefaultFieldWordlist = []string{
 }
 
 // FuzzFields sends queries with wordlist field names to discover valid fields.
-func FuzzFields(targetURL string, typeName string, words []string) schema.FuzzResult {
+func FuzzFields(targetURL string, typeName string, words []string) (schema.FuzzResult, error) {
+	if targetURL == "" {
+		return schema.FuzzResult{}, fmt.Errorf("target URL is required")
+	}
+	if _, err := url.Parse(targetURL); err != nil {
+		return schema.FuzzResult{}, fmt.Errorf("invalid target URL: %w", err)
+	}
 	if len(words) == 0 {
 		words = DefaultFieldWordlist
 	}
@@ -121,7 +128,7 @@ func FuzzFields(targetURL string, typeName string, words []string) schema.FuzzRe
 	// Deduplicate suggestions
 	result.Suggestions = dedupe(result.Suggestions)
 
-	return result
+	return result, nil
 }
 
 func extractSuggestions(message string) []string {

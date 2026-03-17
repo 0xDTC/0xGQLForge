@@ -14,7 +14,13 @@ import (
 )
 
 // TryBypass attempts various introspection bypass techniques against a target GraphQL endpoint.
-func TryBypass(targetURL string) []schema.BypassResult {
+func TryBypass(targetURL string) ([]schema.BypassResult, error) {
+	if targetURL == "" {
+		return nil, fmt.Errorf("target URL is required")
+	}
+	if _, err := url.Parse(targetURL); err != nil {
+		return nil, fmt.Errorf("invalid target URL: %w", err)
+	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	var results []schema.BypassResult
 
@@ -152,7 +158,7 @@ func TryBypass(targetURL string) []schema.BypassResult {
 		results = append(results, result)
 	}
 
-	return results
+	return results, nil
 }
 
 func truncate(s string, maxLen int) string {

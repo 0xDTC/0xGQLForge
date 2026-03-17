@@ -29,7 +29,7 @@
         <a href="/schema/{{.Schema.ID}}" class="btn btn-primary">View Inferred Schema</a>
         <a href="/schema/{{.Schema.ID}}/graph" class="btn">Graph</a>
         {{else}}
-        <button class="btn btn-primary" onclick="inferSchema('{{.Project.ID}}')">Build Schema from Traffic</button>
+        <button class="btn btn-primary" onclick="inferSchema(event, '{{.Project.ID}}')">Build Schema from Traffic</button>
         {{end}}
     </div>
 </div>
@@ -109,7 +109,7 @@
             Build a synthetic GraphQL schema from the captured traffic. Operations and top-level fields
             will be extracted from the request bodies to reconstruct Query/Mutation root types.
         </p>
-        <button class="btn btn-primary" onclick="inferSchema('{{.Project.ID}}')">Build Schema from Traffic</button>
+        <button class="btn btn-primary" onclick="inferSchema(event, '{{.Project.ID}}')">Build Schema from Traffic</button>
         <div id="infer-result" class="parse-result" style="display:none;margin-top:.75rem"></div>
     </div>
 </div>
@@ -314,8 +314,8 @@ async function initTraffic() {
 }
 initTraffic();
 
-function inferSchema(projectId) {
-    const btn = event.target;
+function inferSchema(e, projectId) {
+    const btn = e.target;
     btn.disabled = true;
     btn.textContent = 'Building...';
     const resultDiv = document.getElementById('infer-result');

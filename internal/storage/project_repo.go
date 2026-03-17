@@ -91,9 +91,29 @@ func (r *ProjectRepo) Get(id string) (*schema.Project, error) {
 	return &p, nil
 }
 
-// Delete removes a project by ID.
+// Delete removes a project by ID, clearing traffic references first.
 func (r *ProjectRepo) Delete(id string) error {
-	_, err := r.db.conn.Exec("DELETE FROM projects WHERE id = ?", id)
+	tx, err := r.db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin delete project tx: %w", err)
+	}
+	if _, err := tx.Exec("UPDATE traffic SET project_id = NULL WHERE project_id = ?", id); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("nullify traffic project_id: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM projects WHERE id = ?", id); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete project: %w", err)
+	}
+	return tx.Commit()
+}
+
+// UpdateProxyAddr sets the proxy address for a project.
+func (r *ProjectRepo) UpdateProxyAddr(projectID, addr string) error {
+	_, err := r.db.conn.Exec(
+		"UPDATE projects SET proxy_addr = ?, updated_at = ? WHERE id = ?",
+		addr, time.Now().UTC(), projectID,
+	)
 	return err
 }
 

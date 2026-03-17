@@ -164,30 +164,35 @@ func (r *TrafficRepo) Save(req *schema.CapturedRequest) error {
 
 // List returns captured traffic, newest first. Limit 0 = no limit.
 func (r *TrafficRepo) List(limit int) ([]schema.CapturedRequest, error) {
-	q := "SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, fingerprint, cluster_id, project_id FROM traffic ORDER BY timestamp DESC"
 	if limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", limit)
+		return r.scanTraffic(r.db.conn.Query(
+			"SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, fingerprint, cluster_id, project_id FROM traffic ORDER BY timestamp DESC LIMIT ?", limit))
 	}
-	return r.scanTraffic(r.db.conn.Query(q))
+	return r.scanTraffic(r.db.conn.Query(
+		"SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, fingerprint, cluster_id, project_id FROM traffic ORDER BY timestamp DESC"))
 }
 
 // ListByProject returns captured traffic for a project, newest first. Limit 0 = no limit.
 func (r *TrafficRepo) ListByProject(projectID string, limit int) ([]schema.CapturedRequest, error) {
-	q := "SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, fingerprint, cluster_id, project_id FROM traffic WHERE project_id = ? ORDER BY timestamp DESC"
 	if limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", limit)
+		return r.scanTraffic(r.db.conn.Query(
+			"SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, fingerprint, cluster_id, project_id FROM traffic WHERE project_id = ? ORDER BY timestamp DESC LIMIT ?", projectID, limit))
 	}
-	return r.scanTraffic(r.db.conn.Query(q, projectID))
+	return r.scanTraffic(r.db.conn.Query(
+		"SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, fingerprint, cluster_id, project_id FROM traffic WHERE project_id = ? ORDER BY timestamp DESC", projectID))
 }
 
 // ListByProjectFull is like ListByProject but also loads response_body.
 // Used by schema inference so it can analyse response payloads.
 func (r *TrafficRepo) ListByProjectFull(projectID string, limit int) ([]schema.CapturedRequest, error) {
 	q := "SELECT id, timestamp, method, url, host, headers_json, operation_name, query, variables_json, response_code, response_body, fingerprint, cluster_id, project_id FROM traffic WHERE project_id = ? ORDER BY timestamp DESC"
+	var args []any
+	args = append(args, projectID)
 	if limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", limit)
+		q += " LIMIT ?"
+		args = append(args, limit)
 	}
-	rows, err := r.db.conn.Query(q, projectID)
+	rows, err := r.db.conn.Query(q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list traffic full: %w", err)
 	}

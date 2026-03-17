@@ -79,6 +79,7 @@ func (cm *CertManager) GetCertificate(host string) (*tls.Certificate, error) {
 		result.cert, result.err = cm.mintCert(host)
 		if result.err == nil {
 			cm.certCache.Store(host, result.cert)
+			cm.mintOnce.Delete(host) // prune once-entry after successful cache
 		}
 	})
 	if result.err != nil {

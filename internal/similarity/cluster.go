@@ -2,13 +2,9 @@ package similarity
 
 import (
 	"encoding/json"
-	"fmt"
-	"sync/atomic"
 
 	"github.com/0xDTC/0xGQLForge/internal/schema"
 )
-
-var clusterSeq atomic.Int64
 
 // ClusterQueries groups captured requests by their structural fingerprint.
 func ClusterQueries(requests []schema.CapturedRequest) []schema.QueryCluster {
@@ -23,8 +19,14 @@ func ClusterQueries(requests []schema.CapturedRequest) []schema.QueryCluster {
 
 		cluster, exists := groups[fp]
 		if !exists {
+			// Use fingerprint-based stable ID so cluster IDs are
+			// deterministic across calls (not an ever-incrementing counter).
+			stableID := "cluster_" + fp
+			if len(fp) > 12 {
+				stableID = "cluster_" + fp[:12]
+			}
 			cluster = &schema.QueryCluster{
-				ID:          fmt.Sprintf("cluster_%d", clusterSeq.Add(1)),
+				ID:          stableID,
 				Fingerprint: fp,
 			}
 			groups[fp] = cluster

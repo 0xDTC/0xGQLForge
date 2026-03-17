@@ -121,6 +121,10 @@ func (h *Handlers) SchemaOperations(w http.ResponseWriter, r *http.Request) {
 // SchemaDelete removes a schema.
 func (h *Handlers) SchemaDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if id == "" {
+		jsonErr(w, http.StatusBadRequest, "missing schema id")
+		return
+	}
 	if err := h.SchemaRepo.Delete(id); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return

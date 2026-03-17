@@ -95,7 +95,11 @@ func (h *Handlers) FuzzFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := analysis.FuzzFields(req.TargetURL, req.TypeName, req.Words)
+	result, err := analysis.FuzzFields(req.TargetURL, req.TypeName, req.Words)
+	if err != nil {
+		jsonErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	jsonResp(w, http.StatusOK, result)
 }
 
@@ -109,7 +113,11 @@ func (h *Handlers) BypassIntrospection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := analysis.TryBypass(req.TargetURL)
+	results, err := analysis.TryBypass(req.TargetURL)
+	if err != nil {
+		jsonErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	jsonResp(w, http.StatusOK, results)
 }
 

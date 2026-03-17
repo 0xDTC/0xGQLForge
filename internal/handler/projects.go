@@ -48,6 +48,10 @@ func (h *Handlers) ProjectCreate(w http.ResponseWriter, r *http.Request) {
 // ProjectDelete removes a project by ID.
 func (h *Handlers) ProjectDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if id == "" {
+		jsonErr(w, http.StatusBadRequest, "missing project id")
+		return
+	}
 	if err := h.ProjectRepo.Delete(id); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -60,6 +64,8 @@ func (h *Handlers) ProjectsList(w http.ResponseWriter, r *http.Request) {
 	projects, err := h.ProjectRepo.List()
 	if err != nil {
 		log.Printf("list projects: %v", err)
+		http.Error(w, "Failed to load projects", http.StatusInternalServerError)
+		return
 	}
 	data := map[string]any{
 		"Title":    "Projects",

@@ -528,6 +528,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!focusedId) {
                     nodeSel.transition().duration(200).attr('opacity', 1);
                     linkSel.transition().duration(200).attr('opacity', 1);
+                } else {
+                    // Restore the focused lineage dimming that hover may have overridden
+                    applyLineage(lineageIds(focusedId), 0.08, 0.03, 200);
                 }
                 tooltip.style.display = 'none';
             });
